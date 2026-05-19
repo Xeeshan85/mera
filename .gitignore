@@ -95,6 +95,3 @@ firebase-admin-sdk.json
 # ── Runtime / Fallback files ────────────────────────────────
 signals_fallback.jsonl
 *.local
-
-
-firebase-admin-sdk.json
