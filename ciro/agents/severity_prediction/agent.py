@@ -13,6 +13,7 @@ from google.adk.agents import Agent
 from google.genai import types
 
 from services.incident_service import IncidentService
+from google.cloud.firestore_v1.base_query import FieldFilter
 from schemas.incident import SeverityForecast
 
 load_dotenv()
@@ -301,6 +302,92 @@ def update_incident_severity(
         return {"status": "error", "error_message": str(e)}
 
 
+
+def get_historical_incidents(
+    lat: float,
+    lng: float,
+    crisis_type: str,
+    radius_km: float = 5.0,
+    days_back: int = 30,
+) -> dict:
+    """
+    Query Firestore for past incidents near this location to compute baseline probability.
+
+    Args:
+        lat: Latitude
+        lng: Longitude
+        crisis_type: Type of crisis to look up
+        radius_km: Search radius in km
+        days_back: How many days back to look
+
+    Returns:
+        dict with historical stats
+    """
+    try:
+        from datetime import timedelta
+        cutoff = (datetime.utcnow() - timedelta(days=days_back)).isoformat()
+        docs = list(
+            incident_service._db.collection("incidents")
+            .where(filter=FieldFilter("crisis_type", "==", crisis_type))
+            .where(filter=FieldFilter("created_at", ">=", cutoff))
+            .stream()
+        )
+        if not docs:
+            return {
+                "status": "success",
+                "data": {
+                    "count": 0,
+                    "avg_severity": 0,
+                    "avg_duration_hours": 0,
+                    "avg_affected_population": 0,
+                    "historical_base_probability": 0.1,
+                    "note": "No historical incidents found — using default baseline"
+                }
+            }
+
+        severities = []
+        durations = []
+        populations = []
+        for doc in docs:
+            d = doc.to_dict()
+            # Filter by rough radius
+            dlat = d.get("location", {}).get("lat", 0) - lat
+            dlng = d.get("location", {}).get("lng", 0) - lng
+            dist_km = ((dlat**2 + dlng**2) ** 0.5) * 111
+            if dist_km <= radius_km:
+                severities.append(d.get("severity_level", 1))
+                durations.append(d.get("expected_duration_hours", 2))
+                populations.append(d.get("affected_population_estimate", 0))
+
+        count = len(severities)
+        if count == 0:
+            return {
+                "status": "success",
+                "data": {
+                    "count": 0,
+                    "avg_severity": 0,
+                    "avg_duration_hours": 0,
+                    "avg_affected_population": 0,
+                    "historical_base_probability": 0.1,
+                    "note": "No nearby historical incidents"
+                }
+            }
+
+        return {
+            "status": "success",
+            "data": {
+                "count": count,
+                "avg_severity": round(sum(severities) / count, 1),
+                "avg_duration_hours": round(sum(durations) / count, 1),
+                "avg_affected_population": int(sum(populations) / count),
+                "historical_base_probability": min(count / 10, 0.9),
+            }
+        }
+    except Exception as e:
+        logger.error(f"get_historical_incidents failed: {e}")
+        return {"status": "error", "error_message": str(e)}
+
+
 AGENT_INSTRUCTION = """\
 You are the Severity & Evolution Prediction Agent (Agent 3) for CIRO.
 
@@ -334,6 +421,7 @@ severity_prediction_agent = Agent(
     model="gemini-2.5-flash",
     instruction=AGENT_INSTRUCTION,
     tools=[
+        get_historical_incidents,
         get_weather_forecast,
         get_vulnerable_facilities,
         get_congestion_spread_prediction,
