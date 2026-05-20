@@ -126,6 +126,82 @@ Return ONLY valid JSON (no markdown):
             "updated_at": datetime.utcnow().isoformat(),
         })
 
+        # Fire FCM push notifications
+        try:
+            from firebase_admin import messaging
+            if not is_retraction:
+                # Public alert → public_alerts topic
+                pub_msg = messages.get("public", "")
+                if pub_msg:
+                    messaging.send(messaging.Message(
+                        notification=messaging.Notification(
+                            title=f"⚠️ {crisis_type.upper()} ALERT — {area_name}",
+                            body=pub_msg[:160],
+                        ),
+                        data={"incident_id": incident_id, "crisis_type": crisis_type},
+                        topic="public_alerts",
+                    ))
+                # Emergency services alert
+                es_msg = messages.get("emergency_services", "")
+                if es_msg:
+                    messaging.send(messaging.Message(
+                        notification=messaging.Notification(
+                            title=f"🚨 DISPATCH: {crisis_type.upper()} — {area_name}",
+                            body=es_msg[:160],
+                        ),
+                        data={"incident_id": incident_id},
+                        topic="emergency_services",
+                    ))
+            else:
+                messaging.send(messaging.Message(
+                    notification=messaging.Notification(
+                        title=f"✅ CANCELLED: {crisis_type.upper()} alert — {area_name}",
+                        body=messages.get("public", "Alert cancelled. Area safe.")[:160],
+                    ),
+                    data={"incident_id": incident_id, "is_retraction": "true"},
+                    topic="public_alerts",
+                ))
+        except Exception as fcm_err:
+            logger.warning(f"FCM push failed (non-blocking): {fcm_err}")
+
+        # Fire FCM push notifications
+        try:
+            from firebase_admin import messaging
+            if not is_retraction:
+                # Public alert → public_alerts topic
+                pub_msg = messages.get("public", "")
+                if pub_msg:
+                    messaging.send(messaging.Message(
+                        notification=messaging.Notification(
+                            title=f"⚠️ {crisis_type.upper()} ALERT — {area_name}",
+                            body=pub_msg[:160],
+                        ),
+                        data={"incident_id": incident_id, "crisis_type": crisis_type},
+                        topic="public_alerts",
+                    ))
+                # Emergency services alert
+                es_msg = messages.get("emergency_services", "")
+                if es_msg:
+                    messaging.send(messaging.Message(
+                        notification=messaging.Notification(
+                            title=f"🚨 DISPATCH: {crisis_type.upper()} — {area_name}",
+                            body=es_msg[:160],
+                        ),
+                        data={"incident_id": incident_id},
+                        topic="emergency_services",
+                    ))
+            else:
+                messaging.send(messaging.Message(
+                    notification=messaging.Notification(
+                        title=f"✅ CANCELLED: {crisis_type.upper()} alert — {area_name}",
+                        body=messages.get("public", "Alert cancelled. Area safe.")[:160],
+                    ),
+                    data={"incident_id": incident_id, "is_retraction": "true"},
+                    topic="public_alerts",
+                ))
+        except Exception as fcm_err:
+            logger.warning(f"FCM push failed (non-blocking): {fcm_err}")
+
         return {
             "status": "success",
             "data": {
@@ -255,6 +331,35 @@ def trigger_retraction(incident_id: str, reason: str, crisis_type: str, area_nam
         return {"status": "error", "error_message": str(e)}
 
 
+
+def send_fcm_notification(title: str, body: str, topic: str, incident_id: str = "") -> dict:
+    """
+    Send FCM push notification to Android app subscribers.
+
+    Args:
+        title: Notification title
+        body: Notification body
+        topic: FCM topic — "public_alerts" | "emergency_services" | "admin"
+        incident_id: Optional incident ID to include in data payload
+
+    Returns:
+        dict with status and message_id
+    """
+    try:
+        from firebase_admin import messaging
+        message = messaging.Message(
+            notification=messaging.Notification(title=title, body=body),
+            data={"incident_id": incident_id, "topic": topic},
+            topic=topic,
+        )
+        message_id = messaging.send(message)
+        logger.info(f"FCM sent to topic {topic}: {message_id}")
+        return {"status": "success", "data": {"message_id": message_id, "topic": topic}}
+    except Exception as e:
+        logger.error(f"FCM send failed: {e}")
+        return {"status": "error", "error_message": str(e)}
+
+
 AGENT_INSTRUCTION = """\
 You are the Stakeholder Notification & Action Simulation Agent (Agent 5) for CIRO.
 
@@ -288,6 +393,7 @@ stakeholder_notification_agent = Agent(
     instruction=AGENT_INSTRUCTION,
     tools=[
         generate_stakeholder_messages,
+        send_fcm_notification,
         simulate_response_action,
         trigger_retraction,
     ],
