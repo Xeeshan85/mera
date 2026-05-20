@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ciro_surface">#FF0D1117</color>
+    <color name="ciro_surface_card">#FF161B22</color>
+    <color name="ciro_accent_cyan">#FF58A6FF</color>
+    <color name="ciro_accent_green">#FF3FB950</color>
+    <color name="ciro_accent_red">#FFF85149</color>
+    <color name="ciro_text_primary">#FFE6EDF3</color>
+    <color name="ciro_text_secondary">#FF8B949E</color>
+
+    <!-- Severity palette -->
+    <color name="severity_5">#FFFF4D4F</color>
+    <color name="severity_4">#FFFFA940</color>
+    <color name="severity_3">#FFFADB14</color>
+    <color name="severity_2">#FF1890FF</color>
+    <color name="severity_1">#FF52C41A</color>
+</resources>
