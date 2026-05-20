@@ -42,7 +42,7 @@ class CiroRepository(
      */
     fun observeActiveIncidents(): Flow<List<Incident>> = callbackFlow {
         val registration = db.collection("incidents")
-            .whereNotIn("state", listOf("RESOLVED", "RETRACTED"))
+            // .whereNotIn("state", listOf("RESOLVED", "RETRACTED")) // Temporarily removed to prevent composite index crash on first run
             .orderBy("severity_level", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
