@@ -167,10 +167,14 @@ def main():
     conflict = resolve_resource_conflict(
         incident_a_id=flood_id,
         incident_a_severity=4,
+        incident_a_population=15000,
         incident_a_type="flood",
+        incident_a_spread_risk="high",
         incident_b_id=heat_id,
         incident_b_severity=3,
+        incident_b_population=5000,
         incident_b_type="heatwave",
+        incident_b_spread_risk="medium",
         contested_resource_type="ambulance",
         total_available=5,
     )

@@ -48,9 +48,8 @@ def generate_stakeholder_messages(
         dict with status and generated messages per stakeholder type
     """
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        from google import genai
+        client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
         if is_retraction:
             prompt = f"""
@@ -88,7 +87,7 @@ Return ONLY valid JSON (no markdown):
 }}
 """
 
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
         raw = response.text.strip()
         if raw.startswith("```"):
             raw = raw.split("```")[1]
@@ -164,43 +163,6 @@ Return ONLY valid JSON (no markdown):
         except Exception as fcm_err:
             logger.warning(f"FCM push failed (non-blocking): {fcm_err}")
 
-        # Fire FCM push notifications
-        try:
-            from firebase_admin import messaging
-            if not is_retraction:
-                # Public alert → public_alerts topic
-                pub_msg = messages.get("public", "")
-                if pub_msg:
-                    messaging.send(messaging.Message(
-                        notification=messaging.Notification(
-                            title=f"⚠️ {crisis_type.upper()} ALERT — {area_name}",
-                            body=pub_msg[:160],
-                        ),
-                        data={"incident_id": incident_id, "crisis_type": crisis_type},
-                        topic="public_alerts",
-                    ))
-                # Emergency services alert
-                es_msg = messages.get("emergency_services", "")
-                if es_msg:
-                    messaging.send(messaging.Message(
-                        notification=messaging.Notification(
-                            title=f"🚨 DISPATCH: {crisis_type.upper()} — {area_name}",
-                            body=es_msg[:160],
-                        ),
-                        data={"incident_id": incident_id},
-                        topic="emergency_services",
-                    ))
-            else:
-                messaging.send(messaging.Message(
-                    notification=messaging.Notification(
-                        title=f"✅ CANCELLED: {crisis_type.upper()} alert — {area_name}",
-                        body=messages.get("public", "Alert cancelled. Area safe.")[:160],
-                    ),
-                    data={"incident_id": incident_id, "is_retraction": "true"},
-                    topic="public_alerts",
-                ))
-        except Exception as fcm_err:
-            logger.warning(f"FCM push failed (non-blocking): {fcm_err}")
 
         return {
             "status": "success",

@@ -5,6 +5,7 @@
 import json
 import logging
 import os
+import uuid
 from datetime import datetime
 
 import httpx
@@ -296,6 +297,23 @@ def update_incident_severity(
             "updated_at": datetime.utcnow().isoformat(),
         })
         logger.info(f"Severity forecast updated for incident {incident_id}")
+
+        # Write agent trace
+        incident_service.write_agent_trace({
+            "trace_id": str(uuid.uuid4()),
+            "agent": "severity_prediction_agent",
+            "incident_id": incident_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "input_summary": f"Severity prediction for {incident_id}",
+            "tool_calls": [],
+            "gemini_reasoning": None,
+            "decision": f"Forecast: T+1h={sf.t_plus_1h}, T+2h={sf.t_plus_2h}, T+6h={sf.t_plus_6h}, spread={spread_risk}",
+            "confidence_scores": {},
+            "state_transition": None,
+            "trade_off_narrative": None,
+            "duration_ms": 0,
+        })
+
         return {"status": "success", "data": {"incident_id": incident_id, "severity_forecast": sf.model_dump()}}
     except Exception as e:
         logger.error(f"update_incident_severity failed: {e}")

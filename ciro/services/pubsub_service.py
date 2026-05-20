@@ -20,7 +20,7 @@ class PubSubService:
     """Google Cloud Pub/Sub service for signal publishing and subscribing."""
 
     def __init__(self):
-        self._project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "ciro-hackathon-2025")
+        self._project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "ciro-hackathon-2026-2")
         self._topic_name = f"projects/{self._project_id}/topics/ciro-signals"
         self._subscription_name = f"projects/{self._project_id}/subscriptions/ciro-signals-sub"
 

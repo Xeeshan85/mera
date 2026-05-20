@@ -17,6 +17,7 @@ class ConflictingHypothesis(BaseModel):
     type: str
     confidence: float
     evidence_signal_ids: list[str] = []
+    evidence_summary: str = ""
 
 
 class SeverityForecast(BaseModel):

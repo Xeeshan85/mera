@@ -38,7 +38,7 @@ class FirestoreService:
     @staticmethod
     def _init_firebase():
         """Initialize Firebase Admin SDK with credential fallback chain."""
-        project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "ciro-hackathon-2025")
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "ciro-hackathon-2026-2")
         cred_path_raw = os.getenv("FIREBASE_CREDENTIALS_PATH", "./firebase-admin-sdk.json")
 
         # Resolve relative paths against the project root (where .env lives)

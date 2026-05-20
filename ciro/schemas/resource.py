@@ -8,6 +8,7 @@ import uuid
 class ResourceLocation(BaseModel):
     lat: float
     lng: float
+    name: str = ""
 
 
 class Resource(BaseModel):
@@ -25,8 +26,8 @@ class Resource(BaseModel):
 
     @property
     def current_location(self):
-        from types import SimpleNamespace
-        return SimpleNamespace(lat=self.location.lat, lng=self.location.lng, name=self.name)
+        """Backwards-compatible accessor — returns location with name populated."""
+        return self.location
 
     def to_firestore_dict(self) -> dict[str, Any]:
         data = self.model_dump()
@@ -35,4 +36,7 @@ class Resource(BaseModel):
 
     @classmethod
     def from_firestore_dict(cls, data: dict[str, Any]) -> "Resource":
+        # Migrate: old Firestore docs store name at top level, not inside location
+        if "location" in data and "name" not in data.get("location", {}):
+            data["location"]["name"] = data.get("name", "")
         return cls(**data)

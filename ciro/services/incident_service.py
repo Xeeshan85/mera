@@ -1,14 +1,18 @@
 # services/incident_service.py
 # Firestore CRUD + atomic state machine for incidents and resources
 
+import json
 import logging
+import math
 import os
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta
 from typing import Optional
 
 import firebase_admin
 from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
+from google.cloud import pubsub_v1
 from dotenv import load_dotenv
 
 from schemas.incident import Incident, AuditLogEntry
@@ -36,6 +40,15 @@ class IncidentService:
             self._init_firebase()
             IncidentService._initialized = True
         self._db = firestore.client()
+        self._project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "ciro-hackathon-2026-2")
+        # Pub/Sub publisher for incident events
+        try:
+            self._publisher = pubsub_v1.PublisherClient()
+            self._incidents_topic = f"projects/{self._project_id}/topics/ciro-incidents"
+        except Exception as e:
+            logger.warning(f"Pub/Sub publisher init failed: {e}")
+            self._publisher = None
+            self._incidents_topic = None
 
     @staticmethod
     def _init_firebase():
@@ -152,6 +165,10 @@ class IncidentService:
             txn = self._db.transaction()
             result = _txn(txn)
             logger.info(f"Incident {incident_id}: {result['from']} → {result['to']}")
+
+            # Publish state change to Pub/Sub for Person 3's orchestrator
+            self._publish_incident_event(incident_id, result['to'], reason)
+
             return {"status": "success", "data": result}
 
         except Exception as e:
@@ -251,3 +268,90 @@ class IncidentService:
         except Exception as e:
             logger.error(f"Failed to write response action: {e}")
             return {"status": "error", "error_message": str(e)}
+
+    # ── Pub/Sub Incident Events ──────────────────────────────────────
+
+    def _publish_incident_event(self, incident_id: str, new_state: str, reason: str):
+        """Publish state change event to ciro-incidents Pub/Sub topic."""
+        if self._publisher is None or self._incidents_topic is None:
+            logger.warning("Pub/Sub publisher not available. Incident event not published.")
+            return
+        try:
+            data = json.dumps({
+                "incident_id": incident_id,
+                "new_state": new_state,
+                "reason": reason,
+                "timestamp": datetime.utcnow().isoformat(),
+            }).encode("utf-8")
+            future = self._publisher.publish(
+                self._incidents_topic,
+                data,
+                incident_id=incident_id,
+                new_state=new_state,
+            )
+            msg_id = future.result(timeout=10)
+            logger.info(f"Incident event published: {incident_id} → {new_state} (msg_id: {msg_id})")
+        except Exception as e:
+            logger.error(f"Failed to publish incident event: {e}")
+
+    # ── Agent Traces ─────────────────────────────────────────────
+
+    def write_agent_trace(self, trace: dict):
+        """Write agent execution trace to agent_traces/{trace_id}."""
+        try:
+            trace_id = trace.get("trace_id", str(uuid.uuid4()))
+            self._db.collection("agent_traces").document(trace_id).set(trace)
+            logger.info(f"Agent trace {trace_id} written")
+        except Exception as e:
+            logger.error(f"Failed to write agent trace: {e}")
+
+    # ── Duplicate Incident Detection ─────────────────────────────
+
+    def find_nearby_incident(
+        self, lat: float, lng: float, crisis_type: str,
+        radius_km: float = 3.0, hours_back: float = 2.0
+    ) -> Optional[Incident]:
+        """
+        Find an existing active incident near this location with the same crisis type.
+        Used to deduplicate: if found, update existing instead of creating new.
+        """
+        try:
+            cutoff = (datetime.utcnow() - timedelta(hours=hours_back)).isoformat()
+            docs = list(
+                self._db.collection("incidents")
+                .where(filter=FieldFilter("crisis_type", "==", crisis_type))
+                .where(filter=FieldFilter("created_at", ">=", cutoff))
+                .stream()
+            )
+            for doc in docs:
+                d = doc.to_dict()
+                state = d.get("state", "MONITORING")
+                if state in ["RESOLVED", "RETRACTED"]:
+                    continue
+                loc = d.get("location", {})
+                dlat = loc.get("lat", 0) - lat
+                dlng = loc.get("lng", 0) - lng
+                dist_km = math.sqrt(dlat**2 + dlng**2) * 111
+                if dist_km <= radius_km:
+                    return Incident.from_firestore_dict(d)
+            return None
+        except Exception as e:
+            logger.error(f"find_nearby_incident failed: {e}")
+            return None
+
+    # ── Mark Signals Processed ───────────────────────────────────
+
+    def mark_signals_processed(self, signal_ids: list[str], incident_id: str):
+        """Mark signal documents as processed after classification."""
+        for sid in signal_ids:
+            try:
+                doc_ref = self._db.collection("signals").document(sid)
+                doc = doc_ref.get()
+                if doc.exists:
+                    doc_ref.update({
+                        "processed": True,
+                        "related_incident_id": incident_id,
+                    })
+                    logger.debug(f"Signal {sid} marked as processed")
+            except Exception as e:
+                logger.warning(f"Failed to mark signal {sid} as processed: {e}")
