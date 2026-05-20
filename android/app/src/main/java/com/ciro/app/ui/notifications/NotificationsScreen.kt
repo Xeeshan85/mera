@@ -1,6 +1,9 @@
 package com.ciro.app.ui.notifications
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -23,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -31,19 +36,29 @@ import com.ciro.app.data.model.CiroNotification
 import com.ciro.app.ui.theme.CiroColors
 
 /**
- * Notification feed screen showing all stakeholder alerts.
+ * Enhanced notification feed screen with stakeholder type filtering.
  *
  * Features:
- *   • Grouped by incident (TODO: implement grouping if needed)
+ *   • Filter chips: All, Public, Emergency, Hospital, Utility, Transport, Command Center
+ *   • Notification count per type
  *   • Retraction messages styled with red accent
- *   • Stakeholder type badges (public, emergency_services, hospital, etc.)
+ *   • Stakeholder type badges with emoji indicators
  *   • Channel indicator (FCM, dashboard, SMS, email)
+ *   • Delivery status indicator
  */
 @Composable
 fun NotificationsScreen(
     notifications: List<CiroNotification>,
+    selectedFilter: String?,
+    onFilterChange: (String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val filteredNotifications = if (selectedFilter == null) {
+        notifications
+    } else {
+        notifications.filter { it.stakeholder_type == selectedFilter }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -60,28 +75,108 @@ fun NotificationsScreen(
             fontWeight = FontWeight.Bold,
             letterSpacing = 1.sp,
         )
+        Spacer(Modifier.height(2.dp))
         Text(
-            text = "${notifications.size} notifications",
+            text = "${filteredNotifications.size} notifications",
             color = CiroColors.TextMuted,
             fontSize = 12.sp,
         )
 
         Spacer(Modifier.height(12.dp))
 
-        if (notifications.isEmpty()) {
+        // ── Filter Chips ─────────────────────────────────────────────
+        val stakeholderTypes = listOf(
+            null to "All",
+            "public" to "📢 Public",
+            "emergency_services" to "🚨 Emergency",
+            "hospital" to "🏥 Hospital",
+            "utility" to "⚡ Utility",
+            "transport" to "🚗 Transport",
+            "command_center" to "📡 Command",
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            stakeholderTypes.forEach { (type, label) ->
+                val isSelected = selectedFilter == type
+                val count = if (type == null) notifications.size
+                else notifications.count { it.stakeholder_type == type }
+                val chipColor = if (type != null) stakeholderColor(type) else CiroColors.AccentCyan
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(
+                            if (isSelected) chipColor.copy(alpha = 0.15f) else Color.Transparent
+                        )
+                        .border(
+                            1.dp,
+                            if (isSelected) chipColor.copy(alpha = 0.5f) else CiroColors.SurfaceBorder.copy(alpha = 0.3f),
+                            RoundedCornerShape(20.dp),
+                        )
+                        .clickable { onFilterChange(type) }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = label,
+                        color = if (isSelected) chipColor else CiroColors.TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    )
+                    if (count > 0) {
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "$count",
+                            color = if (isSelected) chipColor else CiroColors.TextMuted,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .background(
+                                    if (isSelected) chipColor.copy(alpha = 0.1f) else CiroColors.Surface,
+                                    RoundedCornerShape(8.dp),
+                                )
+                                .padding(horizontal = 4.dp, vertical = 1.dp),
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        if (filteredNotifications.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("No notifications yet", color = CiroColors.TextMuted, fontSize = 14.sp)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("🔔", fontSize = 32.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = if (selectedFilter != null) "No ${selectedFilter.replace("_", " ")} notifications"
+                        else "No notifications yet",
+                        color = CiroColors.TextMuted,
+                        fontSize = 14.sp,
+                    )
+                    Text(
+                        text = "Waiting for agent pipeline activity",
+                        color = CiroColors.TextMuted,
+                        fontSize = 11.sp,
+                    )
+                }
             }
         } else {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(notifications, key = { it.notification_id }) { notification ->
+                items(filteredNotifications, key = { it.notification_id }) { notification ->
                     NotificationCard(notification = notification)
                 }
                 item { Spacer(Modifier.height(80.dp)) }
@@ -93,8 +188,7 @@ fun NotificationsScreen(
 @Composable
 private fun NotificationCard(notification: CiroNotification) {
     val isRetraction = notification.is_retraction
-    val borderColor = if (isRetraction) CiroColors.AccentRed.copy(alpha = 0.4f)
-                      else CiroColors.SurfaceBorder
+    val stakeColor = stakeholderColor(notification.stakeholder_type)
 
     Card(
         shape = RoundedCornerShape(12.dp),
@@ -102,6 +196,14 @@ private fun NotificationCard(notification: CiroNotification) {
             containerColor = if (isRetraction) CiroColors.AccentRed.copy(alpha = 0.05f)
                             else CiroColors.SurfaceCard,
         ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                1.dp,
+                if (isRetraction) CiroColors.AccentRed.copy(alpha = 0.2f)
+                else CiroColors.SurfaceBorder.copy(alpha = 0.15f),
+                RoundedCornerShape(12.dp),
+            ),
     ) {
         Column(
             modifier = Modifier
@@ -121,7 +223,7 @@ private fun NotificationCard(notification: CiroNotification) {
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = notification.stakeholder_type.uppercase().replace("_", " "),
-                    color = stakeholderColor(notification.stakeholder_type),
+                    color = stakeColor,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                 )
@@ -146,6 +248,21 @@ private fun NotificationCard(notification: CiroNotification) {
 
             Spacer(Modifier.height(8.dp))
 
+            // Retraction indicator
+            if (isRetraction) {
+                Text(
+                    text = "⚠️ RETRACTION",
+                    color = CiroColors.AccentRed,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier
+                        .background(CiroColors.AccentRed.copy(alpha = 0.1f), RoundedCornerShape(3.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+                Spacer(Modifier.height(6.dp))
+            }
+
             // Title
             Text(
                 text = notification.message_title,
@@ -168,7 +285,7 @@ private fun NotificationCard(notification: CiroNotification) {
                 overflow = TextOverflow.Ellipsis,
             )
 
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
 
             // Footer: delivery status + incident ID
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -213,7 +330,7 @@ private fun stakeholderEmoji(type: String): String = when (type) {
     else -> "📋"
 }
 
-private fun stakeholderColor(type: String): androidx.compose.ui.graphics.Color = when (type) {
+private fun stakeholderColor(type: String): Color = when (type) {
     "public" -> CiroColors.AccentCyan
     "emergency_services" -> CiroColors.AccentRed
     "hospital" -> CiroColors.AccentGreen

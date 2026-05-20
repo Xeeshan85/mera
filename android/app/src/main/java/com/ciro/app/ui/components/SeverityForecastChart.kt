@@ -1,12 +1,31 @@
 package com.ciro.app.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -15,31 +34,55 @@ import com.ciro.app.data.model.SeverityForecast
 import com.ciro.app.ui.theme.CiroColors
 
 /**
- * Severity forecast bar chart placeholder (Vico fallback).
+ * Animated severity forecast bar chart.
+ *
+ * Shows T+1h, T+2h, T+6h severity projections with animated bar growth,
+ * severity colour coding, labels, and uncertainty range indicator.
  */
 @Composable
 fun SeverityForecastChart(
     forecast: SeverityForecast,
     modifier: Modifier = Modifier,
 ) {
+    // Trigger animation on composition
+    var animate by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { animate = true }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(CiroColors.SurfaceCard, RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(12.dp))
+            .background(CiroColors.SurfaceCard)
+            .border(1.dp, CiroColors.SurfaceBorder.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
             .padding(16.dp)
     ) {
-        // Simple Placeholder Chart using Box
+        // Chart area
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(180.dp)
                 .padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.Bottom
+            verticalAlignment = Alignment.Bottom,
         ) {
-            ChartBar(forecast.t_plus_1h)
-            ChartBar(forecast.t_plus_2h)
-            ChartBar(forecast.t_plus_6h)
+            ChartBar(
+                label = "T+1h",
+                level = forecast.t_plus_1h,
+                animate = animate,
+                delayMs = 0,
+            )
+            ChartBar(
+                label = "T+2h",
+                level = forecast.t_plus_2h,
+                animate = animate,
+                delayMs = 150,
+            )
+            ChartBar(
+                label = "T+6h",
+                level = forecast.t_plus_6h,
+                animate = animate,
+                delayMs = 300,
+            )
         }
 
         Spacer(Modifier.height(12.dp))
@@ -68,18 +111,53 @@ fun SeverityForecastChart(
 }
 
 @Composable
-private fun ChartBar(level: Int) {
-    // Max level is 5, scale height relative to 5
-    val heightFraction = if (level <= 0) 0.1f else (level / 5f).coerceIn(0.1f, 1.0f)
-    Box(
-        modifier = Modifier
-            .width(48.dp)
-            .fillMaxHeight(heightFraction)
-            .background(
-                color = severityBarColor(level),
-                shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
-            )
+private fun ChartBar(
+    label: String,
+    level: Int,
+    animate: Boolean,
+    delayMs: Int,
+) {
+    val targetFraction = if (level <= 0) 0.08f else (level / 5f).coerceIn(0.08f, 1.0f)
+    val animatedFraction by animateFloatAsState(
+        targetValue = if (animate) targetFraction else 0f,
+        animationSpec = tween(durationMillis = 800, delayMillis = delayMs),
+        label = "barGrow",
     )
+    val color = severityBarColor(level)
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(56.dp),
+    ) {
+        // Value label on top of bar
+        Text(
+            text = "$level",
+            color = color,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(4.dp))
+        // Animated bar
+        Box(
+            modifier = Modifier
+                .width(40.dp)
+                .fillMaxHeight(animatedFraction)
+                .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(color, color.copy(alpha = 0.5f))
+                    )
+                ),
+        )
+        Spacer(Modifier.height(4.dp))
+        // Time label
+        Text(
+            text = label,
+            color = CiroColors.TextMuted,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
 }
 
 @Composable

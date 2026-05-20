@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.stateIn
 
 /**
- * Central ViewModel for the CIRO command-center dashboard.
+ * Central ViewModel for the CIRO command-center.
  *
  * Exposes live [StateFlow]s that the Compose UI collects. Each flow is backed
  * by a Firestore snapshot listener via [CiroRepository], so every Firestore
@@ -67,6 +67,71 @@ class DashboardViewModel(
         _selectedIncidentId.value = incidentId
     }
 
+    /** Find an incident by its ID across all incidents. */
+    fun findIncidentById(id: String, allIncidents: List<Incident>): Incident? {
+        return allIncidents.firstOrNull { it.incident_id == id }
+    }
+
+    /** Get resources allocated to a specific incident. */
+    fun resourcesForIncident(incidentId: String, allResources: List<Resource>): List<Resource> {
+        return allResources.filter { it.assigned_incident_id == incidentId }
+    }
+
+    /** Get agent traces related to a specific incident. */
+    fun tracesForIncident(incidentId: String, allTraces: List<AgentTrace>): List<AgentTrace> {
+        return allTraces.filter { it.incident_id == incidentId }
+    }
+
+    /** Get notifications related to a specific incident. */
+    fun notificationsForIncident(
+        incidentId: String,
+        allNotifications: List<CiroNotification>
+    ): List<CiroNotification> {
+        return allNotifications.filter { it.incident_id == incidentId }
+    }
+
+    // ── Crisis alert overlay ─────────────────────────────────────────────
+
+    private val _crisisAlertIncident = MutableStateFlow<Incident?>(null)
+    val crisisAlertIncident: StateFlow<Incident?> = _crisisAlertIncident.asStateFlow()
+
+    private val _acknowledgedIncidentIds = mutableSetOf<String>()
+
+    /** Check if there's a new CONFIRMED incident to alert on. */
+    fun checkForCrisisAlert(incidents: List<Incident>) {
+        val confirmedIncidents = incidents.filter {
+            it.state == "CONFIRMED" && it.incident_id !in _acknowledgedIncidentIds
+        }
+        if (confirmedIncidents.isNotEmpty() && _crisisAlertIncident.value == null) {
+            _crisisAlertIncident.value = confirmedIncidents.first()
+        }
+    }
+
+    /** Dismiss the crisis alert overlay. */
+    fun dismissCrisisAlert() {
+        _crisisAlertIncident.value?.let { inc ->
+            _acknowledgedIncidentIds.add(inc.incident_id)
+        }
+        _crisisAlertIncident.value = null
+    }
+
+    // ── Notification filtering ───────────────────────────────────────────
+
+    private val _selectedStakeholderFilter = MutableStateFlow<String?>(null)
+    val selectedStakeholderFilter: StateFlow<String?> = _selectedStakeholderFilter.asStateFlow()
+
+    fun setStakeholderFilter(type: String?) {
+        _selectedStakeholderFilter.value = type
+    }
+
+    fun filteredNotifications(
+        notifications: List<CiroNotification>,
+        filter: String?
+    ): List<CiroNotification> {
+        if (filter == null) return notifications
+        return notifications.filter { it.stakeholder_type == filter }
+    }
+
     // ── Computed summary stats for the dashboard header ──────────────────
 
     /** Counts of active incidents grouped by severity level (1–5). */
@@ -90,6 +155,17 @@ class DashboardViewModel(
         )
     }
 
+    /** Resource breakdown by type. */
+    fun resourceTypeBreakdown(resources: List<Resource>): Map<String, ResourceTypeStat> {
+        return resources.groupBy { it.type }.mapValues { (_, res) ->
+            ResourceTypeStat(
+                total = res.size,
+                available = res.count { it.isAvailable },
+                dispatched = res.count { it.isDispatched },
+            )
+        }
+    }
+
     /** Average pipeline latency from metrics collection. */
     fun avgLatencyMs(metrics: List<PipelineMetric>): Long {
         if (metrics.isEmpty()) return 0L
@@ -103,6 +179,21 @@ class DashboardViewModel(
         val ratio = 600_000.0 / avg // 10 min manual baseline
         return "${String.format("%.0f", ratio)}× faster than manual"
     }
+
+    /** Average latency formatted as human-readable string. */
+    fun formattedLatency(metrics: List<PipelineMetric>): String {
+        val avg = avgLatencyMs(metrics)
+        return when {
+            avg <= 0 -> "—"
+            avg < 1000 -> "${avg}ms"
+            else -> "${String.format("%.1f", avg / 1000.0)}s"
+        }
+    }
+
+    /** Count of false positives detected. */
+    fun falsePositiveCount(allIncidents: List<Incident>): Int {
+        return allIncidents.count { it.state == "RETRACTED" }
+    }
 }
 
 data class ResourceSummary(
@@ -110,4 +201,10 @@ data class ResourceSummary(
     val available: Int,
     val dispatched: Int,
     val shadowCommitted: Int,
+)
+
+data class ResourceTypeStat(
+    val total: Int,
+    val available: Int,
+    val dispatched: Int,
 )
