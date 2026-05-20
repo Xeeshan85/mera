@@ -65,6 +65,49 @@ def _write_trace(trace: dict):
         logger.error(f"Failed to write trace: {e}")
 
 
+def _write_live_update(headline: str, crisis_type: str, severity: int,
+                       incident_id: str, location: str, is_breaking: bool = False,
+                       source: str = "agent"):
+    """Write a live update entry for the breaking ticker in the Android app."""
+    try:
+        update_id = str(uuid.uuid4())
+        svc._db.collection("live_updates").document(update_id).set({
+            "update_id": update_id,
+            "headline": headline,
+            "crisis_type": crisis_type,
+            "severity_level": severity,
+            "incident_id": incident_id,
+            "source": source,
+            "location": location,
+            "timestamp": _now(),
+            "is_breaking": is_breaking,
+        })
+        logger.info(f"Live update written: {headline[:50]}...")
+    except Exception as e:
+        logger.error(f"Failed to write live update: {e}")
+
+
+def _send_fcm_notification(title: str, body: str, topic: str = "public_alerts",
+                           incident_id: str = "", crisis_type: str = ""):
+    """Send a real FCM push notification to subscribed devices."""
+    try:
+        from services.fcm_service import FCMService
+        fcm = FCMService()
+        result = fcm.send_to_topic(
+            topic=topic,
+            title=title,
+            body=body,
+            data={
+                "incident_id": incident_id,
+                "crisis_type": crisis_type,
+                "click_action": "OPEN_INCIDENT",
+            },
+        )
+        logger.info(f"FCM notification sent to '{topic}': {result}")
+    except Exception as e:
+        logger.error(f"FCM send failed: {e}")
+
+
 def _record_metrics(trace: dict, false_positive: bool = False):
     """Record pipeline latency metrics to Firestore metrics collection."""
     try:
@@ -180,6 +223,11 @@ def run_pipeline(
             trace["routing_decision"] = "MONITORING"
             trace["total_duration_ms"] = _ms_since(pipeline_start)
             logger.info(f"Confidence {confidence} < 0.4 → MONITORING only")
+            _write_live_update(
+                headline=f"Signal detected near {area_name}: {crisis_type} (low confidence)",
+                crisis_type=crisis_type, severity=severity,
+                incident_id=incident_id, location=area_name,
+            )
             _write_trace(trace)
             _record_metrics(trace)
             return {"status": "success", "data": {"routing": "MONITORING", "incident_id": incident_id}, "trace": trace}
@@ -241,6 +289,11 @@ def run_pipeline(
                 extra={"tool_calls": ["compute_travel_times", "allocate_resources"]},
             ))
             trace["total_duration_ms"] = _ms_since(pipeline_start)
+            _write_live_update(
+                headline=f"Investigating: possible {crisis_type.replace('_', ' ')} near {area_name} — resources pre-staged",
+                crisis_type=crisis_type, severity=severity,
+                incident_id=incident_id, location=area_name,
+            )
             _write_trace(trace)
             _record_metrics(trace)
             return {"status": "success", "data": {"routing": "HYPOTHESIS", "incident_id": incident_id}, "trace": trace}
@@ -559,6 +612,25 @@ def handle_state_change(incident_id: str, new_state: str, reason: str = "") -> d
                 extra={"notifications_sent": len(notifications_sent), "staged_alerting": True},
             ))
 
+            # ── BREAKING TICKER + FCM PUSH ────────────────────
+            headline = f"CONFIRMED: {crisis_type.upper().replace('_', ' ')} in {area_name} — SEV {severity}"
+            _write_live_update(
+                headline=headline, crisis_type=crisis_type, severity=severity,
+                incident_id=incident_id, location=area_name, is_breaking=True,
+            )
+            _send_fcm_notification(
+                title=f"⚠️ {crisis_type.upper().replace('_', ' ')} CONFIRMED",
+                body=f"{area_name} — Severity {severity}. {allocated} units dispatched.",
+                topic="emergency_services",
+                incident_id=incident_id, crisis_type=crisis_type,
+            )
+            _send_fcm_notification(
+                title=f"Crisis Alert: {area_name}",
+                body=f"{crisis_type.replace('_', ' ').title()} confirmed. Stay safe and follow instructions.",
+                topic="public_alerts",
+                incident_id=incident_id, crisis_type=crisis_type,
+            )
+
         elif new_state == "RETRACTED":
             trace["routing_decision"] = "RETRACTION"
             trace["false_alarm_recovery"] = True
@@ -574,6 +646,19 @@ def handle_state_change(incident_id: str, new_state: str, reason: str = "") -> d
                 "retraction", "stakeholder_notification_agent", t0,
                 f"Retraction complete: {len(released)} resources released",
             ))
+
+            # ── RETRACTION TICKER + FCM ───────────────────────
+            _write_live_update(
+                headline=f"RETRACTED: {crisis_type.replace('_', ' ').title()} in {area_name} — False alarm",
+                crisis_type=crisis_type, severity=0,
+                incident_id=incident_id, location=area_name, is_breaking=False,
+            )
+            _send_fcm_notification(
+                title=f"Alert Retracted: {area_name}",
+                body=f"{crisis_type.replace('_', ' ').title()} alert retracted. {len(released)} resources released.",
+                topic="public_alerts",
+                incident_id=incident_id, crisis_type=crisis_type,
+            )
 
         else:
             trace["routing_decision"] = f"UNKNOWN_STATE_{new_state}"

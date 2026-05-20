@@ -164,6 +164,68 @@ class CiroRepository(
         awaitClose { registration.remove() }
     }
 
+    // ── Live Updates (Breaking Ticker) ──────────────────────────────────
+
+    /**
+     * Observe live updates for the breaking news ticker.
+     * Ordered by timestamp DESC, limited to the 20 most recent.
+     */
+    fun observeLiveUpdates(): Flow<List<com.ciro.app.data.model.LiveUpdate>> = callbackFlow {
+        val registration = db.collection("live_updates")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(20)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                val updates = snapshot?.documents?.mapNotNull { doc ->
+                    doc.data?.let { mapToLiveUpdate(it) }
+                } ?: emptyList()
+                trySend(updates)
+            }
+        awaitClose { registration.remove() }
+    }
+
+    // ── Agencies ─────────────────────────────────────────────────────────
+
+    /**
+     * Observe all emergency agencies with their resources and stats.
+     */
+    fun observeAgencies(): Flow<List<com.ciro.app.data.model.Agency>> = callbackFlow {
+        val registration = db.collection("agencies")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                val agencies = snapshot?.documents?.mapNotNull { doc ->
+                    doc.data?.let { mapToAgency(it) }
+                } ?: emptyList()
+                trySend(agencies)
+            }
+        awaitClose { registration.remove() }
+    }
+
+    // ── Live Intelligence ────────────────────────────────────────────────
+
+    /**
+     * Observe the latest intelligence snapshot (single doc: "latest").
+     */
+    fun observeIntelligence(): Flow<com.ciro.app.data.model.IntelligenceSnapshot?> = callbackFlow {
+        val registration = db.collection("live_intelligence")
+            .document("latest")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                val intel = snapshot?.data?.let { mapToIntelligence(it) }
+                trySend(intel)
+            }
+        awaitClose { registration.remove() }
+    }
+
     // ── Firestore → Kotlin Mapping ───────────────────────────────────────────
 
     /**
@@ -310,6 +372,118 @@ class CiroRepository(
             recorded_at = data["recorded_at"] as? String ?: "",
             manual_benchmark_ms = (data["manual_benchmark_ms"] as? Number)?.toLong() ?: 600_000L,
             improvement_ratio = (data["improvement_ratio"] as? Number)?.toDouble() ?: 0.0,
+        )
+    }
+
+    // ── New v2 mappers ──────────────────────────────────────────────────
+
+    private fun mapToLiveUpdate(data: Map<String, Any>): com.ciro.app.data.model.LiveUpdate {
+        return com.ciro.app.data.model.LiveUpdate(
+            update_id = data["update_id"] as? String ?: "",
+            headline = data["headline"] as? String ?: "",
+            crisis_type = data["crisis_type"] as? String ?: "",
+            severity_level = (data["severity_level"] as? Number)?.toInt() ?: 0,
+            incident_id = data["incident_id"] as? String,
+            source = data["source"] as? String ?: "",
+            location = data["location"] as? String ?: "",
+            timestamp = data["timestamp"] as? String ?: "",
+            is_breaking = data["is_breaking"] as? Boolean ?: false,
+        )
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun mapToAgency(data: Map<String, Any>): com.ciro.app.data.model.Agency {
+        val resourcesList = (data["resources"] as? List<Map<String, Any>>) ?: emptyList()
+        val statsMap = (data["stats"] as? Map<String, Any>) ?: emptyMap()
+        return com.ciro.app.data.model.Agency(
+            agency_id = data["agency_id"] as? String ?: "",
+            name = data["name"] as? String ?: "",
+            full_name = data["full_name"] as? String ?: "",
+            type = data["type"] as? String ?: "",
+            logo_emoji = data["logo_emoji"] as? String ?: "🏢",
+            jurisdiction = data["jurisdiction"] as? String ?: "",
+            contact = data["contact"] as? String ?: "",
+            description = data["description"] as? String ?: "",
+            resources = resourcesList.map { r ->
+                com.ciro.app.data.model.AgencyResource(
+                    resource_id = r["resource_id"] as? String ?: "",
+                    type = r["type"] as? String ?: "",
+                    unit_name = r["unit_name"] as? String ?: "",
+                    state = r["state"] as? String ?: "AVAILABLE",
+                    capacity = (r["capacity"] as? Number)?.toInt() ?: 1,
+                )
+            },
+            stats = com.ciro.app.data.model.AgencyStats(
+                incidents_responded = (statsMap["incidents_responded"] as? Number)?.toInt() ?: 0,
+                avg_response_time_min = (statsMap["avg_response_time_min"] as? Number)?.toDouble() ?: 0.0,
+                resources_deployed_total = (statsMap["resources_deployed_total"] as? Number)?.toInt() ?: 0,
+                false_alarms_handled = (statsMap["false_alarms_handled"] as? Number)?.toInt() ?: 0,
+            ),
+        )
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun mapToIntelligence(data: Map<String, Any>): com.ciro.app.data.model.IntelligenceSnapshot {
+        val velocityMap = (data["mention_velocity"] as? Map<String, Any>) ?: emptyMap()
+        val sentimentMap = (data["sentiment"] as? Map<String, Any>) ?: emptyMap()
+        val credibilityMap = (data["credibility"] as? Map<String, Any>) ?: emptyMap()
+        val keywordsList = (data["trending_keywords"] as? List<Map<String, Any>>) ?: emptyList()
+        val sourceHealthList = (data["source_health"] as? List<Map<String, Any>>) ?: emptyList()
+        val timelineList = (data["signal_timeline"] as? List<Map<String, Any>>) ?: emptyList()
+
+        val bucketsList = (velocityMap["buckets"] as? List<Map<String, Any>>) ?: emptyList()
+
+        return com.ciro.app.data.model.IntelligenceSnapshot(
+            snapshot_id = data["snapshot_id"] as? String ?: "",
+            timestamp = data["timestamp"] as? String ?: "",
+            total_signals = (data["total_signals"] as? Number)?.toInt() ?: 0,
+            mention_velocity = com.ciro.app.data.model.MentionVelocity(
+                buckets = bucketsList.map { b ->
+                    com.ciro.app.data.model.VelocityBucket(
+                        bucket = b["bucket"] as? String ?: "",
+                        count = (b["count"] as? Number)?.toInt() ?: 0,
+                    )
+                },
+                current_rate = (velocityMap["current_rate"] as? Number)?.toInt() ?: 0,
+                average_rate = (velocityMap["average_rate"] as? Number)?.toDouble() ?: 0.0,
+                is_spike = velocityMap["is_spike"] as? Boolean ?: false,
+                trend = velocityMap["trend"] as? String ?: "stable",
+            ),
+            sentiment = com.ciro.app.data.model.Sentiment(
+                score = (sentimentMap["score"] as? Number)?.toDouble() ?: 0.5,
+                label = sentimentMap["label"] as? String ?: "neutral",
+                negative_pct = (sentimentMap["negative_pct"] as? Number)?.toInt() ?: 0,
+            ),
+            credibility = com.ciro.app.data.model.Credibility(
+                score = (credibilityMap["score"] as? Number)?.toDouble() ?: 0.0,
+                stars = (credibilityMap["stars"] as? Number)?.toInt() ?: 0,
+                verified_count = (credibilityMap["verified_count"] as? Number)?.toInt() ?: 0,
+                total_sources = (credibilityMap["total_sources"] as? Number)?.toInt() ?: 0,
+            ),
+            trending_keywords = keywordsList.map { kw ->
+                com.ciro.app.data.model.TrendingKeyword(
+                    keyword = kw["keyword"] as? String ?: "",
+                    count = (kw["count"] as? Number)?.toInt() ?: 0,
+                    is_crisis = kw["is_crisis"] as? Boolean ?: false,
+                )
+            },
+            source_health = sourceHealthList.map { sh ->
+                com.ciro.app.data.model.SourceHealth(
+                    source = sh["source"] as? String ?: "",
+                    status = sh["status"] as? String ?: "inactive",
+                    signal_count = (sh["signal_count"] as? Number)?.toInt() ?: 0,
+                    last_signal = sh["last_signal"] as? String ?: "",
+                )
+            },
+            signal_timeline = timelineList.map { st ->
+                com.ciro.app.data.model.SignalTimelineEntry(
+                    time = st["time"] as? String ?: "",
+                    source = st["source"] as? String ?: "",
+                    area = st["area"] as? String ?: "",
+                    credibility = (st["credibility"] as? Number)?.toDouble() ?: 0.0,
+                    urgency = (st["urgency"] as? Number)?.toDouble() ?: 0.0,
+                )
+            },
         )
     }
 }

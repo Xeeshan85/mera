@@ -10,6 +10,8 @@ google-cloud-pubsub==2.38.0
 
 # HTTP
 httpx==0.28.1
+requests>=2.31.0
+feedparser>=6.0.0
 
 # Data
 pydantic==2.13.4

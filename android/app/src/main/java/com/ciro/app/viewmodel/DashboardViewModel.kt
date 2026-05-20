@@ -2,9 +2,13 @@ package com.ciro.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ciro.app.data.model.Agency
 import com.ciro.app.data.model.AgentTrace
 import com.ciro.app.data.model.CiroNotification
 import com.ciro.app.data.model.Incident
+import com.ciro.app.data.model.IntelligenceSnapshot
+import com.ciro.app.data.model.LiveUpdate
+import com.ciro.app.data.model.NewsItem
 import com.ciro.app.data.model.PipelineMetric
 import com.ciro.app.data.model.Resource
 import com.ciro.app.data.repository.CiroRepository
@@ -13,10 +17,11 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 /**
- * Central ViewModel for the CIRO command-center.
+ * Central ViewModel for the barwaqt command-center.
  *
  * Exposes live [StateFlow]s that the Compose UI collects. Each flow is backed
  * by a Firestore snapshot listener via [CiroRepository], so every Firestore
@@ -57,6 +62,36 @@ class DashboardViewModel(
     val metrics: StateFlow<List<PipelineMetric>> = repository.observeMetrics()
         .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // ── NEW: v2 live data streams ────────────────────────────────────────
+
+    /** Breaking news ticker entries from live_updates collection. */
+    val liveUpdates: StateFlow<List<LiveUpdate>> = repository.observeLiveUpdates()
+        .catch { emit(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Emergency agencies with resources and stats. */
+    val agencies: StateFlow<List<Agency>> = repository.observeAgencies()
+        .catch { emit(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Signal intelligence snapshot (velocity, sentiment, keywords). */
+    val intelligence: StateFlow<IntelligenceSnapshot> = repository.observeIntelligence()
+        .catch { emit(null) }
+        .map { it ?: IntelligenceSnapshot() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), IntelligenceSnapshot())
+
+    /** News headlines (loaded via REST, not Firestore listener). */
+    private val _news = MutableStateFlow<List<NewsItem>>(emptyList())
+    val news: StateFlow<List<NewsItem>> = _news.asStateFlow()
+
+    /** Admin panel visibility. */
+    private val _showAdminPanel = MutableStateFlow(false)
+    val showAdminPanel: StateFlow<Boolean> = _showAdminPanel.asStateFlow()
+
+    fun toggleAdminPanel() { _showAdminPanel.value = !_showAdminPanel.value }
+    fun openAdminPanel() { _showAdminPanel.value = true }
+    fun closeAdminPanel() { _showAdminPanel.value = false }
 
     // ── Selected incident for detail view ────────────────────────────────
 

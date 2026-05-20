@@ -13,12 +13,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Analytics
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.Map
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Radar
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -41,14 +39,14 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.ciro.app.ui.analytics.AnalyticsScreen
-import com.ciro.app.ui.brain.AIBrainScreen
+import com.ciro.app.ui.admin.AdminPanel
+import com.ciro.app.ui.agency.AgencyProfileScreen
 import com.ciro.app.ui.components.CrisisAlertOverlay
-import com.ciro.app.ui.dashboard.DashboardScreen
 import com.ciro.app.ui.incidents.IncidentDetailScreen
+import com.ciro.app.ui.intel.IntelScreen
 import com.ciro.app.ui.map.CrisisMapScreen
-import com.ciro.app.ui.notifications.NotificationsScreen
-import com.ciro.app.ui.resources.ResourceHubScreen
+import com.ciro.app.ui.pulse.PulseScreen
+import com.ciro.app.ui.response.ResponseScreen
 import com.ciro.app.ui.splash.SplashScreen
 import com.ciro.app.ui.theme.CiroColors
 import com.ciro.app.ui.theme.CiroTheme
@@ -56,11 +54,10 @@ import com.ciro.app.viewmodel.DashboardViewModel
 import com.google.firebase.messaging.FirebaseMessaging
 
 /**
- * Entry point for the CIRO Android application.
+ * Entry point for the barwaqt Android application.
  *
- * Wraps the entire app in CiroTheme, sets up Navigation Compose
- * for Splash → Main (5 tabs) → Incident Detail,
- * and shows a CrisisAlertOverlay when new CONFIRMED incidents arrive.
+ * Navigation: Splash → Main (4 tabs: Pulse / Intel / Map / Response) → Incident Detail
+ * Hidden admin panel accessible via long-press on barwaqt logo in Pulse tab.
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -70,6 +67,7 @@ class MainActivity : ComponentActivity() {
         // Subscribe to FCM topics for push notifications
         FirebaseMessaging.getInstance().subscribeToTopic("public_alerts")
         FirebaseMessaging.getInstance().subscribeToTopic("admin")
+        FirebaseMessaging.getInstance().subscribeToTopic("emergency_services")
 
         setContent {
             CiroTheme {
@@ -85,8 +83,11 @@ object CiroRoutes {
     const val SPLASH = "splash"
     const val MAIN = "main"
     const val INCIDENT_DETAIL = "incident/{incidentId}"
+    const val AGENCY_DETAIL = "agency/{agencyId}"
+    const val ADMIN = "admin"
 
     fun incidentDetail(id: String) = "incident/$id"
+    fun agencyDetail(id: String) = "agency/$id"
 }
 
 // ── Root App ─────────────────────────────────────────────────────────────────
@@ -125,7 +126,7 @@ fun CiroApp() {
                 )
             }
 
-            // ── Main (tabs) ──────────────────────────────────────
+            // ── Main (4 tabs) ────────────────────────────────────
             composable(
                 route = CiroRoutes.MAIN,
                 enterTransition = { fadeIn(tween(300)) },
@@ -171,6 +172,63 @@ fun CiroApp() {
                     onBack = { navController.popBackStack() },
                 )
             }
+
+            // ── Agency Detail ────────────────────────────────────
+            composable(
+                route = CiroRoutes.AGENCY_DETAIL,
+                enterTransition = {
+                    slideIntoContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Start,
+                        tween(300),
+                    )
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        AnimatedContentTransitionScope.SlideDirection.End,
+                        tween(300),
+                    )
+                },
+            ) { backStackEntry ->
+                val agencyId = backStackEntry.arguments?.getString("agencyId") ?: ""
+                val allAgencies by viewModel.agencies.collectAsState()
+                val agency = allAgencies.firstOrNull { it.agency_id == agencyId }
+
+                AgencyProfileScreen(
+                    agency = agency,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            // ── Admin Panel ──────────────────────────────────────
+            composable(
+                route = CiroRoutes.ADMIN,
+                enterTransition = {
+                    slideIntoContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Up,
+                        tween(300),
+                    )
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Down,
+                        tween(300),
+                    )
+                },
+            ) {
+                val allIncidents by viewModel.allIncidents.collectAsState()
+                val metrics by viewModel.metrics.collectAsState()
+                val traces by viewModel.agentTraces.collectAsState()
+
+                AdminPanel(
+                    incidents = allIncidents,
+                    metrics = metrics,
+                    traces = traces,
+                    onTriggerScenario = { scenarioName ->
+                        // TODO: Call backend /api/trigger-scenario via HTTP
+                    },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         // ── Crisis Alert Overlay (on top of everything) ──────────
@@ -186,7 +244,7 @@ fun CiroApp() {
     }
 }
 
-// ── Main Screen (Bottom Nav Tabs) ────────────────────────────────────────────
+// ── Main Screen (Bottom Nav — 4 Tabs) ────────────────────────────────────────
 
 data class BottomNavItem(
     val label: String,
@@ -199,11 +257,10 @@ fun MainScreen(
     navController: NavHostController,
 ) {
     val navItems = listOf(
-        BottomNavItem("Dashboard", Icons.Default.Dashboard),
+        BottomNavItem("Pulse", Icons.Default.Radar),
+        BottomNavItem("Intel", Icons.Default.Sensors),
         BottomNavItem("Map", Icons.Default.Map),
-        BottomNavItem("Alerts", Icons.Default.Notifications),
-        BottomNavItem("Analytics", Icons.Default.Analytics),
-        BottomNavItem("AI Brain", Icons.Default.Psychology),
+        BottomNavItem("Response", Icons.Default.Shield),
     )
 
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -212,16 +269,10 @@ fun MainScreen(
     val incidents by viewModel.incidents.collectAsState()
     val allIncidents by viewModel.allIncidents.collectAsState()
     val resources by viewModel.resources.collectAsState()
-    val notifications by viewModel.notifications.collectAsState()
-    val agentTraces by viewModel.agentTraces.collectAsState()
-    val metrics by viewModel.metrics.collectAsState()
-    val selectedFilter by viewModel.selectedStakeholderFilter.collectAsState()
-
-    // Computed values
-    val sevCounts = viewModel.severityCounts(incidents)
-    val resSummary = viewModel.resourceSummary(resources)
-    val avgLatency = viewModel.avgLatencyMs(metrics)
-    val improvementLine = viewModel.improvementHeadline(metrics)
+    val liveUpdates by viewModel.liveUpdates.collectAsState()
+    val agencies by viewModel.agencies.collectAsState()
+    val intelligence by viewModel.intelligence.collectAsState()
+    val news by viewModel.news.collectAsState()
 
     Scaffold(
         containerColor = CiroColors.Surface,
@@ -263,45 +314,42 @@ fun MainScreen(
                 .background(CiroColors.Surface),
         ) {
             when (selectedTab) {
-                0 -> DashboardScreen(
+                0 -> PulseScreen(
+                    incidents = allIncidents,
+                    liveUpdates = liveUpdates,
+                    resources = resources,
+                    onIncidentClick = { incidentId ->
+                        navController.navigate(CiroRoutes.incidentDetail(incidentId))
+                    },
+                    onAdminLongPress = {
+                        viewModel.openAdminPanel()
+                        navController.navigate(CiroRoutes.ADMIN)
+                    },
+                )
+
+                1 -> IntelScreen(
+                    intelligence = intelligence,
+                    news = news,
+                )
+
+                2 -> CrisisMapScreen(
                     incidents = incidents,
                     resources = resources,
-                    metrics = metrics,
-                    severityCounts = sevCounts,
-                    resourceSummary = resSummary,
-                    avgLatencyMs = avgLatency,
-                    improvementHeadline = improvementLine,
-                    falsePositiveCount = viewModel.falsePositiveCount(allIncidents),
                     onIncidentClick = { incidentId ->
                         navController.navigate(CiroRoutes.incidentDetail(incidentId))
                     },
                 )
 
-                1 -> CrisisMapScreen(
-                    incidents = incidents,
+                3 -> ResponseScreen(
+                    incidents = allIncidents,
+                    agencies = agencies,
                     resources = resources,
+                    onAgencyClick = { agencyId ->
+                        navController.navigate(CiroRoutes.agencyDetail(agencyId))
+                    },
                     onIncidentClick = { incidentId ->
                         navController.navigate(CiroRoutes.incidentDetail(incidentId))
                     },
-                )
-
-                2 -> NotificationsScreen(
-                    notifications = notifications,
-                    selectedFilter = selectedFilter,
-                    onFilterChange = { viewModel.setStakeholderFilter(it) },
-                )
-
-                3 -> AnalyticsScreen(
-                    metrics = metrics,
-                    stageBreakdown = viewModel.avgStageBreakdown(metrics),
-                    accuracyRate = viewModel.accuracyRate(metrics),
-                    speedComparison = viewModel.speedComparison(metrics),
-                    avgLatencyMs = avgLatency,
-                    falsePositiveCount = viewModel.falsePositiveCount(allIncidents),
-                )
-
-                4 -> AIBrainScreen(
-                    traces = agentTraces,
                 )
             }
         }
