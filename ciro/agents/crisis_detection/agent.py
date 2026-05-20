@@ -41,8 +41,8 @@ def classify_crisis(
         dict with status, incident_id, state, confidence_score, crisis_type
     """
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+        from google import genai
+        client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
         
 
         prompt = f"""
@@ -81,8 +81,7 @@ Rules:
 - Be conservative: when in doubt, use lower confidence
 """
 
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
         raw = response.text.strip()
         # Strip markdown fences if present
         if raw.startswith("```"):
