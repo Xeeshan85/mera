@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.CIRO" parent="android:Theme.Material.NoActionBar">
+        <item name="android:colorPrimary">@color/ciro_accent_cyan</item>
+        <item name="android:colorPrimaryDark">@color/ciro_surface</item>
+        <item name="android:colorAccent">@color/ciro_accent_cyan</item>
+        <item name="android:statusBarColor">@color/ciro_surface</item>
+        <item name="android:navigationBarColor">@color/ciro_surface_card</item>
+        <item name="android:windowBackground">@color/ciro_surface</item>
+    </style>
+</resources>
