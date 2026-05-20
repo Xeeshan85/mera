@@ -287,6 +287,9 @@ class CiroRepository(
             resource_trade_off_narrative = data["resource_trade_off_narrative"] as? String,
             actions_simulated = (data["actions_simulated"] as? List<Map<String, Any>>) ?: emptyList(),
             fallbacks_triggered = (data["fallbacks_triggered"] as? List<String>) ?: emptyList(),
+            triggered_by = data["triggered_by"] as? String ?: "",
+            total_duration_ms = (data["total_duration_ms"] as? Number)?.toLong() ?: 0L,
+            false_alarm_recovery = data["false_alarm_recovery"] as? Boolean ?: false,
         )
     }
 

@@ -119,12 +119,12 @@ fun SplashScreen(
 
             // CIRO title
             Text(
-                text = "CIRO",
+                text = "barwaqt",
                 color = CiroColors.AccentCyan,
                 fontSize = 42.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
-                letterSpacing = 8.sp,
+                letterSpacing = 4.sp,
                 modifier = Modifier.scale(logoScale.value),
             )
 

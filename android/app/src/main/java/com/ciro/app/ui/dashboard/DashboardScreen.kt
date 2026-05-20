@@ -140,12 +140,12 @@ private fun HeaderSection(activeCount: Int, avgLatencyMs: Long) {
         // CIRO title
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "CIRO",
+                text = "barwaqt",
                 fontSize = 26.sp,
                 fontWeight = FontWeight.Black,
                 color = CiroColors.AccentCyan,
                 fontFamily = FontFamily.Monospace,
-                letterSpacing = 4.sp,
+                letterSpacing = 2.sp,
             )
             Spacer(Modifier.width(10.dp))
             // Vertical divider

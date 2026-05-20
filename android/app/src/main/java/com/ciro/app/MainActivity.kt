@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -46,6 +47,7 @@ import com.ciro.app.ui.components.CrisisAlertOverlay
 import com.ciro.app.ui.dashboard.DashboardScreen
 import com.ciro.app.ui.incidents.IncidentDetailScreen
 import com.ciro.app.ui.map.CrisisMapScreen
+import com.ciro.app.ui.notifications.NotificationsScreen
 import com.ciro.app.ui.resources.ResourceHubScreen
 import com.ciro.app.ui.splash.SplashScreen
 import com.ciro.app.ui.theme.CiroColors
@@ -199,7 +201,7 @@ fun MainScreen(
     val navItems = listOf(
         BottomNavItem("Dashboard", Icons.Default.Dashboard),
         BottomNavItem("Map", Icons.Default.Map),
-        BottomNavItem("Resources", Icons.Default.LocalHospital),
+        BottomNavItem("Alerts", Icons.Default.Notifications),
         BottomNavItem("Analytics", Icons.Default.Analytics),
         BottomNavItem("AI Brain", Icons.Default.Psychology),
     )
@@ -283,10 +285,10 @@ fun MainScreen(
                     },
                 )
 
-                2 -> ResourceHubScreen(
-                    resources = resources,
-                    summary = resSummary,
-                    resourcesByType = viewModel.resourcesByType(resources),
+                2 -> NotificationsScreen(
+                    notifications = notifications,
+                    selectedFilter = selectedFilter,
+                    onFilterChange = { viewModel.setStakeholderFilter(it) },
                 )
 
                 3 -> AnalyticsScreen(

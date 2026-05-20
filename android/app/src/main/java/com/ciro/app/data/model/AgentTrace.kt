@@ -25,6 +25,10 @@ data class AgentTrace(
     val resource_trade_off_narrative: String? = null,
     val actions_simulated: List<Map<String, Any>> = emptyList(),
     val fallbacks_triggered: List<String> = emptyList(),
+    // Phase 3 enriched trace fields (added in orchestrator rewrite)
+    val triggered_by: String = "",
+    val total_duration_ms: Long = 0,
+    val false_alarm_recovery: Boolean = false,
 ) {
     /** Human-friendly agent name for display. */
     val agentDisplayName: String
