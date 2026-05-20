@@ -172,7 +172,8 @@ async def _try_apify(search_query: str, location_name: str, max_results: int) ->
             "kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest"
         ).call(run_input=run_input)
 
-        items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
+        dataset_id = run.default_dataset_id if hasattr(run, "default_dataset_id") else run["defaultDatasetId"]
+        items = list(client.dataset(dataset_id).iterate_items())
 
         if not items:
             logger.warning("Apify returned 0 tweets")

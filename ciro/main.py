@@ -11,7 +11,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-load_dotenv()
+# Load .env from the project root (one level above ciro/)
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(_project_root, ".env"))
 
 # Ensure ciro/ is on the path so agents/services resolve
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

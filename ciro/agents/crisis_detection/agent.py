@@ -58,9 +58,6 @@ def classify_crisis(
     tool_calls = []
 
     try:
-        from google import genai
-        client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
-
         prompt = f"""
 You are a crisis detection specialist for CIRO — an urban emergency management system for Islamabad, Pakistan.
 
@@ -121,7 +118,8 @@ Rules:
 """
 
         t_llm = datetime.utcnow()
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        from services.gemini_client import generate_with_fallback
+        response = generate_with_fallback("gemini-2.5-flash", prompt)
         llm_ms = int((datetime.utcnow() - t_llm).total_seconds() * 1000)
         tool_calls.append({"tool": "gemini_classify", "duration_ms": llm_ms, "status": "success"})
 

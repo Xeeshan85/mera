@@ -48,9 +48,6 @@ def generate_stakeholder_messages(
         dict with status and generated messages per stakeholder type
     """
     try:
-        from google import genai
-        client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
-
         if is_retraction:
             prompt = f"""
 Generate retraction messages for a cancelled emergency alert in Islamabad, Pakistan.
@@ -87,7 +84,8 @@ Return ONLY valid JSON (no markdown):
 }}
 """
 
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        from services.gemini_client import generate_with_fallback
+        response = generate_with_fallback("gemini-2.5-flash", prompt)
         raw = response.text.strip()
         if raw.startswith("```"):
             raw = raw.split("```")[1]

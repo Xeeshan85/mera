@@ -157,6 +157,9 @@ def main():
         area_name="I-10 Islamabad",
         signal_summary=heat_signals,
     )
+    if heat_result["status"] != "success":
+        print(f"❌ Heatwave classification failed: {heat_result['error_message']}")
+        return
     heat_id = heat_result["data"]["incident_id"]
     print(f"✅ Second crisis: {heat_result['data']['crisis_type'].upper()}")
     print(f"   Confidence: {heat_result['data']['confidence_score']}")
