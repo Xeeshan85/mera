@@ -1,6 +1,7 @@
 package com.ciro.app.ui.incidents
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,13 +22,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -50,6 +58,7 @@ import com.ciro.app.data.model.Resource
 import com.ciro.app.ui.components.SeverityForecastChart
 import com.ciro.app.ui.components.StatusChip
 import com.ciro.app.ui.theme.CiroColors
+import com.ciro.app.util.IntentUtils
 
 /**
  * Incident detail screen — clean, authority-focused operational view.
@@ -63,6 +72,7 @@ fun IncidentDetailScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     if (incident == null) {
         Box(
             modifier = modifier.fillMaxSize().background(CiroColors.Surface),
@@ -161,6 +171,58 @@ fun IncidentDetailScreen(
             }
         }
 
+        // ── Quick Actions Bar ────────────────────────────────────────
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                // Navigate
+                Button(
+                    onClick = {
+                        IntentUtils.openNavigation(
+                            context, incident.location.lat, incident.location.lng,
+                            incident.location.area_name,
+                        )
+                    },
+                    modifier = Modifier.weight(1f).height(44.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CiroColors.AccentGreen,
+                        contentColor = CiroColors.Surface,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(Icons.Default.Navigation, "Navigate", modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Navigate", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                // Call 1122
+                OutlinedButton(
+                    onClick = { IntentUtils.openDialer(context, "1122") },
+                    modifier = Modifier.weight(1f).height(44.dp),
+                    border = BorderStroke(1.dp, CiroColors.AccentCyan.copy(alpha = 0.4f)),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(Icons.Default.Call, "Call", tint = CiroColors.AccentCyan, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Call 1122", color = CiroColors.AccentCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                // Share
+                OutlinedButton(
+                    onClick = { IntentUtils.shareIncidentReport(context, incident) },
+                    modifier = Modifier.weight(1f).height(44.dp),
+                    border = BorderStroke(1.dp, CiroColors.SurfaceBorder.copy(alpha = 0.4f)),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(Icons.Default.Share, "Share", tint = CiroColors.TextSecondary, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Share", color = CiroColors.TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
         // ── Retraction Banner ────────────────────────────────────────
         if (incident.state == "RETRACTED") {
             item {
@@ -202,7 +264,13 @@ fun IncidentDetailScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(modifier = Modifier.fillMaxWidth()) {
-                        StatItem("📍 Location", incident.location.area_name.ifBlank { "Islamabad" }, Modifier.weight(1f))
+                        StatItem(
+                            "📍 Location",
+                            incident.location.area_name.ifBlank { "Islamabad" },
+                            Modifier.weight(1f).clickable {
+                                IntentUtils.openNavigation(context, incident.location.lat, incident.location.lng)
+                            },
+                        )
                         StatItem("👥 Population", formatPop(incident.affected_population_estimate), Modifier.weight(1f))
                     }
                     Spacer(Modifier.height(12.dp))
@@ -417,6 +485,7 @@ private fun StatItem(label: String, value: String, modifier: Modifier = Modifier
 
 @Composable
 private fun ResourceRow(resource: Resource) {
+    val context = LocalContext.current
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = CiroColors.SurfaceCard),
@@ -441,6 +510,21 @@ private fun ResourceRow(resource: Resource) {
                     color = CiroColors.TextMuted,
                     fontSize = 10.sp,
                 )
+            }
+            // Call button (if contact exists)
+            if (resource.contact.isNotBlank()) {
+                IconButton(
+                    onClick = { IntentUtils.openDialer(context, resource.contact) },
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Call,
+                        contentDescription = "Call",
+                        tint = CiroColors.AccentGreen,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+                Spacer(Modifier.width(4.dp))
             }
             Column(horizontalAlignment = Alignment.End) {
                 StatusChip(text = resource.state, color = CiroColors.resourceStateColor(resource.state))

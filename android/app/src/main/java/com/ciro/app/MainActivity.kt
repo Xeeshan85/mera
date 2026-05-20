@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.Map
-import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -38,11 +40,13 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.ciro.app.ui.analytics.AnalyticsScreen
+import com.ciro.app.ui.brain.AIBrainScreen
 import com.ciro.app.ui.components.CrisisAlertOverlay
 import com.ciro.app.ui.dashboard.DashboardScreen
 import com.ciro.app.ui.incidents.IncidentDetailScreen
 import com.ciro.app.ui.map.CrisisMapScreen
-import com.ciro.app.ui.notifications.NotificationsScreen
+import com.ciro.app.ui.resources.ResourceHubScreen
 import com.ciro.app.ui.splash.SplashScreen
 import com.ciro.app.ui.theme.CiroColors
 import com.ciro.app.ui.theme.CiroTheme
@@ -53,7 +57,7 @@ import com.google.firebase.messaging.FirebaseMessaging
  * Entry point for the CIRO Android application.
  *
  * Wraps the entire app in CiroTheme, sets up Navigation Compose
- * for Splash → Main (Dashboard/Map/Alerts tabs) → Incident Detail,
+ * for Splash → Main (5 tabs) → Incident Detail,
  * and shows a CrisisAlertOverlay when new CONFIRMED incidents arrive.
  */
 class MainActivity : ComponentActivity() {
@@ -195,8 +199,11 @@ fun MainScreen(
     val navItems = listOf(
         BottomNavItem("Dashboard", Icons.Default.Dashboard),
         BottomNavItem("Map", Icons.Default.Map),
-        BottomNavItem("Alerts", Icons.Default.Notifications),
+        BottomNavItem("Resources", Icons.Default.LocalHospital),
+        BottomNavItem("Analytics", Icons.Default.Analytics),
+        BottomNavItem("AI Brain", Icons.Default.Psychology),
     )
+
     var selectedTab by remember { mutableIntStateOf(0) }
 
     // Collect all state flows
@@ -231,7 +238,7 @@ fun MainScreen(
                         label = {
                             Text(
                                 text = item.label,
-                                fontSize = 10.sp,
+                                fontSize = 9.sp,
                                 fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
                             )
                         },
@@ -276,10 +283,23 @@ fun MainScreen(
                     },
                 )
 
-                2 -> NotificationsScreen(
-                    notifications = notifications,
-                    selectedFilter = selectedFilter,
-                    onFilterChange = { viewModel.setStakeholderFilter(it) },
+                2 -> ResourceHubScreen(
+                    resources = resources,
+                    summary = resSummary,
+                    resourcesByType = viewModel.resourcesByType(resources),
+                )
+
+                3 -> AnalyticsScreen(
+                    metrics = metrics,
+                    stageBreakdown = viewModel.avgStageBreakdown(metrics),
+                    accuracyRate = viewModel.accuracyRate(metrics),
+                    speedComparison = viewModel.speedComparison(metrics),
+                    avgLatencyMs = avgLatency,
+                    falsePositiveCount = viewModel.falsePositiveCount(allIncidents),
+                )
+
+                4 -> AIBrainScreen(
+                    traces = agentTraces,
                 )
             }
         }

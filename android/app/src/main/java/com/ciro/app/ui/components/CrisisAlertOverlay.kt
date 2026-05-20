@@ -27,8 +27,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,12 +41,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ciro.app.data.model.Incident
 import com.ciro.app.ui.theme.CiroColors
+import com.ciro.app.util.IntentUtils
 
 /**
  * Full-screen crisis alert — designed for urgency.
@@ -64,6 +69,7 @@ fun CrisisAlertOverlay(
         modifier = modifier,
     ) {
         incident?.let { inc ->
+            val context = LocalContext.current
             val pulse = rememberInfiniteTransition(label = "pulse")
             val glowAlpha by pulse.animateFloat(
                 initialValue = 0.3f, targetValue = 0.8f,
@@ -226,6 +232,35 @@ fun CrisisAlertOverlay(
                             text = "VIEW INCIDENT DETAILS",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
+                            letterSpacing = 1.sp,
+                        )
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    // Navigate Now
+                    Button(
+                        onClick = {
+                            IntentUtils.openNavigation(
+                                context, inc.location.lat, inc.location.lng,
+                                inc.location.area_name,
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = CiroColors.AccentGreen,
+                            contentColor = CiroColors.Surface,
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Icon(Icons.Default.Navigation, "Navigate", modifier = androidx.compose.ui.Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "NAVIGATE NOW",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
                             letterSpacing = 1.sp,
                         )
                     }

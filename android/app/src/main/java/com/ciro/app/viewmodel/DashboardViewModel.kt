@@ -194,6 +194,43 @@ class DashboardViewModel(
     fun falsePositiveCount(allIncidents: List<Incident>): Int {
         return allIncidents.count { it.state == "RETRACTED" }
     }
+
+    // ── Analytics helpers ────────────────────────────────────────────────
+
+    /** Average time per pipeline stage. */
+    fun avgStageBreakdown(metrics: List<PipelineMetric>): PipelineStageBreakdown {
+        if (metrics.isEmpty()) return PipelineStageBreakdown()
+        return PipelineStageBreakdown(
+            avgDetectionMs = metrics.map { it.signal_to_detection_ms }.average().toLong(),
+            avgAllocationMs = metrics.map { it.detection_to_allocation_ms }.average().toLong(),
+            avgNotificationMs = metrics.map { it.allocation_to_notification_ms }.average().toLong(),
+            avgTotalMs = metrics.map { it.total_end_to_end_ms }.average().toLong(),
+        )
+    }
+
+    /** Accuracy rate (non-false-positive ratio). */
+    fun accuracyRate(metrics: List<PipelineMetric>): Float {
+        if (metrics.isEmpty()) return 1f
+        val fp = metrics.count { it.false_positive }
+        return 1f - (fp.toFloat() / metrics.size)
+    }
+
+    /** Per-run speed comparison: CIRO time vs manual baseline. */
+    fun speedComparison(metrics: List<PipelineMetric>): List<SpeedComparisonItem> {
+        return metrics.take(10).mapIndexed { index, m ->
+            SpeedComparisonItem(
+                label = "Run ${metrics.size - index}",
+                ciroMs = m.total_end_to_end_ms,
+                manualMs = m.manual_benchmark_ms,
+                ratio = if (m.total_end_to_end_ms > 0) m.manual_benchmark_ms.toFloat() / m.total_end_to_end_ms else 0f,
+            )
+        }
+    }
+
+    /** Resources grouped by type for the Resource Hub. */
+    fun resourcesByType(resources: List<Resource>): Map<String, List<Resource>> {
+        return resources.groupBy { it.type }
+    }
 }
 
 data class ResourceSummary(
@@ -207,4 +244,18 @@ data class ResourceTypeStat(
     val total: Int,
     val available: Int,
     val dispatched: Int,
+)
+
+data class PipelineStageBreakdown(
+    val avgDetectionMs: Long = 0,
+    val avgAllocationMs: Long = 0,
+    val avgNotificationMs: Long = 0,
+    val avgTotalMs: Long = 0,
+)
+
+data class SpeedComparisonItem(
+    val label: String,
+    val ciroMs: Long,
+    val manualMs: Long,
+    val ratio: Float,
 )

@@ -11,10 +11,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -32,6 +37,7 @@ import com.ciro.app.data.model.Incident
 import com.ciro.app.data.model.Resource
 import com.ciro.app.ui.components.StatusChip
 import com.ciro.app.ui.theme.CiroColors
+import com.ciro.app.util.IntentUtils
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
@@ -184,7 +190,25 @@ private fun IncidentMapPanel(
         Spacer(Modifier.height(14.dp))
 
         // Action buttons
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        val context = LocalContext.current
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Navigate
+            Button(
+                onClick = {
+                    IntentUtils.openNavigation(context, incident.location.lat, incident.location.lng)
+                },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = CiroColors.AccentGreen,
+                    contentColor = CiroColors.Surface,
+                ),
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                Icon(Icons.Default.Navigation, "Navigate", modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Navigate", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+            // View Details
             Button(
                 onClick = onViewDetails,
                 modifier = Modifier.weight(1f),
@@ -194,18 +218,19 @@ private fun IncidentMapPanel(
                 ),
                 shape = RoundedCornerShape(10.dp),
             ) {
-                Text("View Details", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("Details", fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
+            // Dismiss
             Button(
                 onClick = onDismiss,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(0.7f),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = CiroColors.SurfaceBorder,
                     contentColor = CiroColors.TextSecondary,
                 ),
                 shape = RoundedCornerShape(10.dp),
             ) {
-                Text("Dismiss", fontSize = 13.sp)
+                Text("Dismiss", fontSize = 11.sp)
             }
         }
     }

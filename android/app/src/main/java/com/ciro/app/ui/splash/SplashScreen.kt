@@ -167,7 +167,7 @@ fun SplashScreen(
 
             // Authority context
             Text(
-                text = "National Disaster Management Authority",
+                text = "🇵🇰  National Disaster Management Authority",
                 color = CiroColors.TextSecondary,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
