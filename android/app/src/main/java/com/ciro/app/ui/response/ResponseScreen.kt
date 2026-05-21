@@ -160,7 +160,8 @@ fun ResponseScreen(
                     Spacer(Modifier.height(12.dp))
 
                     // Per-type breakdown
-                    val types = allResources.groupBy { it.type }
+                    val resourcesToGroup = if (allResources.isNotEmpty()) allResources else resources
+                    val types = resourcesToGroup.groupBy { it.type }
                     types.forEach { (type, items) ->
                         val typeAvail = items.count { it.state == "AVAILABLE" }
                         ResourceTypeBar(
