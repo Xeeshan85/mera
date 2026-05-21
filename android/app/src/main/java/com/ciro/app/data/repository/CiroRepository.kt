@@ -15,9 +15,11 @@ import com.ciro.app.data.model.Signal
 import com.ciro.app.data.model.SignalLocation
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import java.time.Instant
 
 /**
  * Single source of truth for all Firestore real-time data.
@@ -275,6 +277,300 @@ class CiroRepository(
             }
         awaitClose { registration.remove() }
     }
+
+    // ── Client-side Firestore publishing fallbacks ───────────────────────────
+
+    /**
+     * Publish media headlines into the same Firestore documents the APK observes.
+     * This keeps Pulse/Intel live even when the backend proxy is unavailable.
+     */
+    suspend fun publishNewsHeadlines(headlines: List<NewsItem>) {
+        if (headlines.isEmpty()) return
+
+        val now = Instant.now().toString()
+        val batch = db.batch()
+        val headlineMaps = headlines.take(20).map { it.toFirestoreMap() }
+
+        batch.set(
+            db.collection("news_cache").document("latest"),
+            mapOf(
+                "headlines" to headlineMaps,
+                "cached_at" to now,
+                "count" to headlineMaps.size,
+                "source" to "android_client",
+            ),
+        )
+
+        headlines.take(12).forEach { item ->
+            val updateId = item.news_id.ifBlank { stableId(item.url.ifBlank { item.title }) }
+            batch.set(
+                db.collection("live_updates").document(updateId),
+                mapOf(
+                    "update_id" to updateId,
+                    "headline" to item.title,
+                    "crisis_type" to "",
+                    "severity_level" to urgencyToSeverity(item.urgency),
+                    "incident_id" to null,
+                    "source" to item.source.ifBlank { "Media" },
+                    "location" to "Pakistan",
+                    "timestamp" to item.published_at.ifBlank { now },
+                    "is_breaking" to (item.urgency == "critical" || item.urgency == "warning"),
+                ),
+                com.google.firebase.firestore.SetOptions.merge(),
+            )
+        }
+
+        batch.commit().await()
+    }
+
+    /**
+     * Fallback scenario runner for the admin panel.
+     * Writes demo incidents/traces/metrics straight to Firestore, so the APK
+     * updates in real time without a working Cloud Run endpoint.
+     */
+    suspend fun publishDemoScenario(scenarioName: String): List<String> {
+        val specs = when (scenarioName) {
+            "multi_crisis" -> listOf(scenarioSpec("flood_g10"), scenarioSpec("heatwave_i8"))
+            else -> listOf(scenarioSpec(scenarioName))
+        }
+
+        val now = Instant.now().toString()
+        val batch = db.batch()
+        val incidentIds = mutableListOf<String>()
+
+        specs.forEach { spec ->
+            val incidentId = "demo_${spec.id}_${System.currentTimeMillis()}"
+            incidentIds.add(incidentId)
+            val pipelineRunId = "run_$incidentId"
+            val traceId = "trace_$incidentId"
+            val metricId = "metric_$incidentId"
+            val updateId = "update_$incidentId"
+
+            batch.set(db.collection("incidents").document(incidentId), spec.incidentMap(incidentId, now))
+            batch.set(db.collection("live_updates").document(updateId), spec.liveUpdateMap(updateId, incidentId, now))
+            batch.set(db.collection("agent_traces").document(traceId), spec.traceMap(traceId, pipelineRunId, incidentId, now))
+            batch.set(db.collection("metrics").document(metricId), spec.metricMap(metricId, pipelineRunId, incidentId, now))
+        }
+
+        batch.set(db.collection("live_intelligence").document("latest"), demoIntelligenceMap(now), com.google.firebase.firestore.SetOptions.merge())
+        batch.commit().await()
+        return incidentIds
+    }
+
+    private fun NewsItem.toFirestoreMap(): Map<String, Any> = mapOf(
+        "news_id" to news_id.ifBlank { stableId(url.ifBlank { title }) },
+        "title" to title,
+        "description" to description,
+        "source" to source.ifBlank { "Media" },
+        "url" to url,
+        "image_url" to image_url,
+        "published_at" to published_at,
+        "urgency" to urgency,
+    )
+
+    private fun stableId(value: String): String {
+        return "client_${Integer.toHexString(value.hashCode())}"
+    }
+
+    private fun urgencyToSeverity(urgency: String): Int = when (urgency) {
+        "critical" -> 4
+        "warning" -> 2
+        else -> 0
+    }
+
+    private data class ScenarioSpec(
+        val id: String,
+        val crisisType: String,
+        val areaName: String,
+        val lat: Double,
+        val lng: Double,
+        val state: String,
+        val severity: Int,
+        val confidence: Double,
+        val population: Int,
+        val spreadRisk: String,
+        val durationHours: Double,
+        val headline: String,
+        val narrative: String,
+    ) {
+        fun incidentMap(incidentId: String, now: String): Map<String, Any?> = mapOf(
+            "incident_id" to incidentId,
+            "state" to state,
+            "crisis_type" to crisisType,
+            "severity_level" to severity,
+            "confidence_score" to confidence,
+            "location" to mapOf(
+                "lat" to lat,
+                "lng" to lng,
+                "area_name" to areaName,
+                "affected_radius_km" to if (severity >= 4) 3.2 else 1.4,
+            ),
+            "affected_population_estimate" to population,
+            "expected_duration_hours" to durationHours,
+            "peak_impact_time" to now,
+            "spread_risk" to spreadRisk,
+            "severity_forecast" to mapOf(
+                "t_plus_1h" to severity,
+                "t_plus_2h" to (severity + 1).coerceAtMost(5),
+                "t_plus_6h" to (severity - 1).coerceAtLeast(1),
+                "uncertainty_range" to 1,
+            ),
+            "resources_allocated" to if (state == "CONFIRMED") listOf("ambulance_01", "rescue_01", "police_01") else emptyList<String>(),
+            "stakeholder_notifications_sent" to if (state == "CONFIRMED") listOf("public_alerts", "emergency_services") else emptyList<String>(),
+            "signal_ids" to listOf("android_demo_${id}_weather", "android_demo_${id}_media", "android_demo_${id}_social"),
+            "response_actions" to listOf(
+                mapOf("action" to "Situation created from admin simulation", "status" to "completed", "timestamp" to now),
+                mapOf("action" to "Live update published to Pulse", "status" to "completed", "timestamp" to now),
+            ),
+            "audit_log" to listOf(
+                mapOf(
+                    "timestamp" to now,
+                    "action" to "Scenario triggered from APK admin panel",
+                    "from_state" to null,
+                    "to_state" to state,
+                    "reason" to narrative,
+                    "agent" to "android_fallback",
+                ),
+            ),
+            "trade_off_narrative" to narrative,
+            "created_at" to now,
+            "updated_at" to now,
+        )
+
+        fun liveUpdateMap(updateId: String, incidentId: String, now: String): Map<String, Any?> = mapOf(
+            "update_id" to updateId,
+            "headline" to headline,
+            "crisis_type" to crisisType,
+            "severity_level" to severity,
+            "incident_id" to incidentId,
+            "source" to "admin_simulation",
+            "location" to areaName,
+            "timestamp" to now,
+            "is_breaking" to (state == "CONFIRMED" && severity >= 3),
+        )
+
+        fun traceMap(traceId: String, pipelineRunId: String, incidentId: String, now: String): Map<String, Any?> = mapOf(
+            "trace_id" to traceId,
+            "agent" to "android_fallback_orchestrator",
+            "pipeline_run_id" to pipelineRunId,
+            "incident_id" to incidentId,
+            "timestamp" to now,
+            "input_summary" to headline,
+            "tool_calls" to listOf(
+                mapOf("tool" to "firestore_direct_write", "status" to "success", "duration_ms" to 180),
+                mapOf("tool" to "live_update_publish", "status" to "success", "duration_ms" to 90),
+            ),
+            "gemini_reasoning" to narrative,
+            "decision" to "Created demo incident because backend endpoint was unavailable",
+            "confidence_scores" to mapOf(crisisType to confidence),
+            "duration_ms" to 420,
+            "triggered_by" to "admin_simulation",
+            "total_duration_ms" to 420,
+            "false_alarm_recovery" to (state == "RETRACTED"),
+        )
+
+        fun metricMap(metricId: String, pipelineRunId: String, incidentId: String, now: String): Map<String, Any?> = mapOf(
+            "metric_id" to metricId,
+            "incident_id" to incidentId,
+            "pipeline_run_id" to pipelineRunId,
+            "signal_to_detection_ms" to 180,
+            "detection_to_allocation_ms" to 140,
+            "allocation_to_notification_ms" to 100,
+            "total_end_to_end_ms" to 420,
+            "agents_invoked" to listOf("android_fallback_orchestrator"),
+            "api_calls_made" to mapOf("firestore" to 4),
+            "fallbacks_triggered" to listOf("backend_unreachable"),
+            "false_positive" to (state == "RETRACTED"),
+            "recorded_at" to now,
+            "manual_benchmark_ms" to 600000,
+            "improvement_ratio" to 1428.0,
+        )
+    }
+
+    private fun scenarioSpec(name: String): ScenarioSpec = when (name) {
+        "heatwave_i8" -> ScenarioSpec(
+            id = "heatwave_i8",
+            crisisType = "heatwave",
+            areaName = "I-8 Islamabad",
+            lat = 33.6938,
+            lng = 73.0551,
+            state = "CONFIRMED",
+            severity = 3,
+            confidence = 0.82,
+            population = 9200,
+            spreadRisk = "medium",
+            durationHours = 8.0,
+            headline = "Heatwave stress reported in I-8 Islamabad; medical teams on alert",
+            narrative = "High temperature reports, health complaints, and localized demand pressure indicate a confirmed heatwave response scenario.",
+        )
+        "false_alarm" -> ScenarioSpec(
+            id = "false_alarm",
+            crisisType = "flood",
+            areaName = "F-6 Islamabad",
+            lat = 33.7294,
+            lng = 73.0931,
+            state = "RETRACTED",
+            severity = 1,
+            confidence = 0.34,
+            population = 400,
+            spreadRisk = "low",
+            durationHours = 1.0,
+            headline = "F-6 flooding report retracted after low-confidence verification",
+            narrative = "Sparse reports and weak weather confirmation indicate a false alarm; resources remain available.",
+        )
+        else -> ScenarioSpec(
+            id = "flood_g10",
+            crisisType = "flood",
+            areaName = "G-10 Islamabad",
+            lat = 33.6844,
+            lng = 73.0479,
+            state = "CONFIRMED",
+            severity = 4,
+            confidence = 0.88,
+            population = 15400,
+            spreadRisk = "high",
+            durationHours = 5.0,
+            headline = "Flash flooding in G-10 Islamabad; roads blocked and rescue units dispatched",
+            narrative = "Heavy rain, traffic disruption, and public reports indicate a confirmed flood response requiring rescue, police, and medical coordination.",
+        )
+    }
+
+    private fun demoIntelligenceMap(now: String): Map<String, Any> = mapOf(
+        "snapshot_id" to "android_demo_latest",
+        "timestamp" to now,
+        "total_signals" to 128,
+        "mention_velocity" to mapOf(
+            "buckets" to listOf(
+                mapOf("bucket" to "T-120m", "count" to 8),
+                mapOf("bucket" to "T-105m", "count" to 11),
+                mapOf("bucket" to "T-90m", "count" to 15),
+                mapOf("bucket" to "T-75m", "count" to 18),
+                mapOf("bucket" to "T-60m", "count" to 22),
+                mapOf("bucket" to "T-45m", "count" to 28),
+                mapOf("bucket" to "T-30m", "count" to 35),
+                mapOf("bucket" to "T-15m", "count" to 44),
+            ),
+            "current_rate" to 44,
+            "average_rate" to 22.6,
+            "is_spike" to true,
+            "trend" to "rising",
+        ),
+        "sentiment" to mapOf("score" to 0.73, "label" to "critical", "negative_pct" to 68),
+        "credibility" to mapOf("score" to 0.81, "stars" to 4, "verified_count" to 19, "total_sources" to 36),
+        "trending_keywords" to listOf(
+            mapOf("keyword" to "flood", "count" to 42, "is_crisis" to true),
+            mapOf("keyword" to "rescue", "count" to 31, "is_crisis" to true),
+            mapOf("keyword" to "road", "count" to 26, "is_crisis" to true),
+            mapOf("keyword" to "traffic", "count" to 21, "is_crisis" to false),
+            mapOf("keyword" to "emergency", "count" to 18, "is_crisis" to true),
+        ),
+        "source_health" to listOf(
+            mapOf("source" to "media", "status" to "active", "signal_count" to 20, "last_signal" to now),
+            mapOf("source" to "weather", "status" to "active", "signal_count" to 16, "last_signal" to now),
+            mapOf("source" to "traffic", "status" to "active", "signal_count" to 13, "last_signal" to now),
+            mapOf("source" to "field_report", "status" to "active", "signal_count" to 8, "last_signal" to now),
+        ),
+    )
 
     // ── Firestore → Kotlin Mapping ───────────────────────────────────────────
 

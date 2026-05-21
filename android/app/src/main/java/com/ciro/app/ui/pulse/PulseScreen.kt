@@ -6,7 +6,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,7 +25,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -51,9 +49,18 @@ import com.ciro.app.data.model.Incident
 import com.ciro.app.data.model.LiveUpdate
 import com.ciro.app.data.model.Resource
 import com.ciro.app.ui.components.BreakingTicker
-import com.ciro.app.ui.components.PakistanSilhouette
 import com.ciro.app.ui.components.ThreatGauge
 import com.ciro.app.ui.theme.CiroColors
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.MapType
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.rememberCameraPositionState
 import kotlinx.coroutines.delay
 
 /**
@@ -61,7 +68,6 @@ import kotlinx.coroutines.delay
  * Shows threat gauge, breaking ticker, Pakistan silhouette with zones,
  * city situation card, and horizontal incident carousel.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PulseScreen(
     incidents: List<Incident>,
@@ -94,42 +100,6 @@ fun PulseScreen(
                 tickerIndex = (tickerIndex + 1) % liveUpdates.size
             }
         }
-    }
-
-    // Province threat computation
-    val provinceThreatMap = remember(activeIncidents) {
-        val map = mutableMapOf<String, Int>()
-        activeIncidents.forEach { inc ->
-            val area = inc.location.area_name.lowercase()
-            val province = when {
-                area.contains("islamabad") || area.contains("g-10") || area.contains("i-8")
-                    || area.contains("f-6") || area.contains("f-7") || area.contains("g-11") -> "ICT"
-                area.contains("lahore") || area.contains("punjab") || area.contains("rawalpindi") -> "PB"
-                area.contains("karachi") || area.contains("sindh") -> "SD"
-                area.contains("peshawar") || area.contains("kp") -> "KP"
-                area.contains("quetta") || area.contains("balochistan") -> "BL"
-                else -> "ICT"
-            }
-            map[province] = maxOf(map[province] ?: 0, inc.severity_level)
-        }
-        map
-    }
-    val provinceIncidentMap = remember(activeIncidents) {
-        val map = mutableMapOf<String, Int>()
-        activeIncidents.forEach { inc ->
-            val area = inc.location.area_name.lowercase()
-            val province = when {
-                area.contains("islamabad") || area.contains("g-") || area.contains("i-")
-                    || area.contains("f-") -> "ICT"
-                area.contains("lahore") || area.contains("punjab") || area.contains("rawalpindi") -> "PB"
-                area.contains("karachi") || area.contains("sindh") -> "SD"
-                area.contains("peshawar") || area.contains("kp") -> "KP"
-                area.contains("quetta") || area.contains("balochistan") -> "BL"
-                else -> "ICT"
-            }
-            map[province] = (map[province] ?: 0) + 1
-        }
-        map
     }
 
     // Resource stats
@@ -222,7 +192,7 @@ fun PulseScreen(
             }
         }
 
-        // ── Threat Gauge + Pakistan Silhouette ────────────────────
+        // ── Threat Gauge + Real Pakistan Map ─────────────────────
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -235,10 +205,10 @@ fun PulseScreen(
                     size = 150.dp,
                 )
 
-                PakistanSilhouette(
-                    provinceThreatLevels = provinceThreatMap,
-                    provinceIncidentCounts = provinceIncidentMap,
-                    size = 150.dp,
+                CompactPakistanMap(
+                    incidents = activeIncidents,
+                    onIncidentClick = onIncidentClick,
+                    modifier = Modifier.size(170.dp, 150.dp),
                 )
             }
         }
@@ -359,6 +329,73 @@ fun PulseScreen(
 }
 
 // ── Sub-components ───────────────────────────────────────────────────────────
+
+@Composable
+private fun CompactPakistanMap(
+    incidents: List<Incident>,
+    onIncidentClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val cameraState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(LatLng(30.3753, 69.3451), 4.2f)
+    }
+
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = CiroColors.SurfaceCard),
+        modifier = modifier.border(1.dp, CiroColors.AccentCyan.copy(alpha = 0.22f), RoundedCornerShape(14.dp)),
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = cameraState,
+                properties = MapProperties(mapType = MapType.TERRAIN),
+                uiSettings = MapUiSettings(
+                    zoomControlsEnabled = false,
+                    compassEnabled = false,
+                    scrollGesturesEnabled = false,
+                    zoomGesturesEnabled = false,
+                    tiltGesturesEnabled = false,
+                    rotationGesturesEnabled = false,
+                    mapToolbarEnabled = false,
+                ),
+            ) {
+                incidents.forEach { incident ->
+                    val hue = when (incident.severity_level) {
+                        5 -> BitmapDescriptorFactory.HUE_RED
+                        4 -> BitmapDescriptorFactory.HUE_ORANGE
+                        3 -> BitmapDescriptorFactory.HUE_YELLOW
+                        2 -> BitmapDescriptorFactory.HUE_AZURE
+                        else -> BitmapDescriptorFactory.HUE_GREEN
+                    }
+                    Marker(
+                        state = MarkerState(LatLng(incident.location.lat, incident.location.lng)),
+                        title = incident.location.area_name,
+                        snippet = "${incident.crisis_type.replace("_", " ")} · SEV ${incident.severity_level}",
+                        icon = BitmapDescriptorFactory.defaultMarker(hue),
+                        onClick = {
+                            onIncidentClick(incident.incident_id)
+                            true
+                        },
+                    )
+                }
+            }
+
+            Text(
+                text = "LIVE MAP",
+                color = CiroColors.TextPrimary,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 1.sp,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
+                    .background(CiroColors.Surface.copy(alpha = 0.72f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 6.dp, vertical = 3.dp),
+            )
+        }
+    }
+}
 
 @Composable
 private fun SituationStat(emoji: String, value: String, label: String) {

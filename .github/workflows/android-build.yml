@@ -32,6 +32,16 @@ jobs:
         fi
         printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
 
+    - name: Restore Google Maps key
+      env:
+        MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+      run: |
+        if [ -z "$MAPS_API_KEY" ]; then
+          echo "Missing GitHub secret MAPS_API_KEY. Add your Google Maps Android API key so the APK can render real maps."
+          exit 1
+        fi
+        printf 'MAPS_API_KEY=%s\n' "$MAPS_API_KEY" > android/local.properties
+
     - name: Build Debug APK
       env:
         JAVA_TOOL_OPTIONS: ""

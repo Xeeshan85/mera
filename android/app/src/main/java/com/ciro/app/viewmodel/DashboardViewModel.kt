@@ -34,6 +34,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import javax.xml.parsers.DocumentBuilderFactory
 
 /**
  * Central ViewModel for the barwaqt command-center.
@@ -139,60 +140,98 @@ class DashboardViewModel(
     fun openAdminPanel() { _showAdminPanel.value = true }
     fun closeAdminPanel() { _showAdminPanel.value = false }
 
-    // Backend base URL — defaults to the Cloud Run deployment
-    private val backendUrl: String = "https://ciro-hackathon-2026-2.run.app"
-
     init {
         loadNews()
-        refreshIntelligenceSnapshot()
         seedLiveUpdatesIfEmpty()
     }
 
     /**
-     * Fetch Pakistan news headlines from the backend /api/news endpoint.
-     * Falls back to GNews free API directly if backend is unreachable.
+     * Fetch Pakistan news headlines directly from public RSS feeds and publish
+     * them into Firestore, where Pulse/Intel consume them in real time.
      */
     private fun loadNews() {
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val url = URL("$backendUrl/api/news")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.connectTimeout = 15000 // Cloud Run cold-start can take up to 10s
-                conn.readTimeout = 15000
-                conn.requestMethod = "GET"
-
-                if (conn.responseCode == 200) {
-                    val body = conn.inputStream.bufferedReader().readText()
-                    val json = JSONObject(body)
-                    val arr = json.optJSONArray("headlines") ?: json.optJSONArray("articles") ?: JSONArray()
-                    val items = mutableListOf<NewsItem>()
-                    for (i in 0 until arr.length()) {
-                        val a = arr.getJSONObject(i)
-                        items.add(NewsItem(
-                            news_id = a.optString("news_id", a.optString("url", "news_$i")),
-                            title = a.optString("title", ""),
-                            description = a.optString("description", ""),
-                            source = a.optString("source", "News"),
-                            url = a.optString("url", ""),
-                            image_url = a.optString("image_url", ""),
-                            published_at = a.optString("published_at", a.optString("publishedAt", "")),
-                            urgency = a.optString("urgency", "info")
-                        ))
-                    }
-                    _networkNews.value = items
-                    Log.d("DashboardVM", "Loaded ${items.size} news articles")
+            val rssItems = fetchPakistanRssHeadlines()
+            if (rssItems.isNotEmpty()) {
+                _networkNews.value = rssItems
+                try {
+                    repository.publishNewsHeadlines(rssItems)
+                    Log.d("DashboardVM", "Published ${rssItems.size} RSS headlines to Firestore")
+                } catch (e: Exception) {
+                    Log.w("DashboardVM", "Headline Firestore publish failed: ${e.message}")
                 }
-                conn.disconnect()
-            } catch (e: Exception) {
-                Log.e("DashboardVM", "News fetch failed: ${e.message}")
-                // Fallback: try GNews directly (free, 100 req/day)
+            } else {
                 loadNewsFromGNews()
             }
         }
     }
 
+    private fun fetchPakistanRssHeadlines(): List<NewsItem> {
+        val feeds = listOf(
+            "https://www.dawn.com/feed" to "Dawn",
+            "https://www.thenews.com.pk/rss/1/1" to "The News",
+            "https://tribune.com.pk/feed/pakistan" to "Express Tribune",
+        )
+
+        return feeds.flatMap { (feedUrl, sourceName) ->
+            runCatching { parseRssFeed(feedUrl, sourceName) }.getOrElse {
+                Log.w("DashboardVM", "RSS fetch failed for $sourceName: ${it.message}")
+                emptyList()
+            }
+        }
+            .distinctBy { it.url.ifBlank { it.title } }
+            .take(20)
+    }
+
+    private fun parseRssFeed(feedUrl: String, sourceName: String): List<NewsItem> {
+        val conn = (URL(feedUrl).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 8000
+            readTimeout = 8000
+            requestMethod = "GET"
+            setRequestProperty("User-Agent", "barwaqt-android/1.0")
+        }
+
+        conn.inputStream.use { input ->
+            val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(input)
+            val items = doc.getElementsByTagName("item")
+            val headlines = mutableListOf<NewsItem>()
+            for (i in 0 until minOf(items.length, 10)) {
+                val node = items.item(i)
+                val children = node.childNodes
+                fun tag(name: String): String {
+                    for (j in 0 until children.length) {
+                        val child = children.item(j)
+                        if (child.nodeName.equals(name, ignoreCase = true)) {
+                            return child.textContent?.trim().orEmpty()
+                        }
+                    }
+                    return ""
+                }
+                val title = tag("title")
+                if (title.isBlank()) continue
+                val link = tag("link")
+                val description = tag("description")
+                    .replace(Regex("<[^>]+>"), "")
+                    .trim()
+                    .take(220)
+                headlines.add(
+                    NewsItem(
+                        news_id = "rss_${Integer.toHexString((link.ifBlank { title }).hashCode())}",
+                        title = title,
+                        description = description,
+                        source = sourceName,
+                        url = link,
+                        published_at = tag("pubDate"),
+                        urgency = classifyUrgency("$title $description"),
+                    ),
+                )
+            }
+            return headlines
+        }
+    }
+
     /** Direct GNews fallback when backend is unreachable. */
-    private fun loadNewsFromGNews() {
+    private suspend fun loadNewsFromGNews() {
         try {
             val gnewsKey = "" // Will work without key for limited requests
             val url = URL("https://gnews.io/api/v4/top-headlines?country=pk&lang=en&max=10${if (gnewsKey.isNotEmpty()) "&apikey=$gnewsKey" else ""}")
@@ -218,34 +257,12 @@ class DashboardViewModel(
                     ))
                 }
                 _networkNews.value = items
+                repository.publishNewsHeadlines(items)
                 Log.d("DashboardVM", "GNews fallback loaded ${items.size} articles")
             }
             conn.disconnect()
         } catch (e: Exception) {
             Log.e("DashboardVM", "GNews fallback also failed: ${e.message}")
-        }
-    }
-
-    /**
-     * Ask the backend to recompute live_intelligence/latest.
-     * The UI still updates from the Firestore listener, not this response.
-     */
-    private fun refreshIntelligenceSnapshot() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val url = URL("$backendUrl/api/intelligence/refresh")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.connectTimeout = 10000
-                conn.readTimeout = 20000
-                conn.requestMethod = "POST"
-
-                if (conn.responseCode !in 200..299) {
-                    Log.w("DashboardVM", "Intel refresh failed with HTTP ${conn.responseCode}")
-                }
-                conn.disconnect()
-            } catch (e: Exception) {
-                Log.w("DashboardVM", "Intel refresh skipped: ${e.message}")
-            }
         }
     }
 
@@ -332,39 +349,15 @@ class DashboardViewModel(
         _scenarioStatus.value = "Triggering $scenarioName..."
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val url = URL("$backendUrl/api/trigger-scenario")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.doOutput = true
-                conn.connectTimeout = 15000
-                conn.readTimeout = 90000 // Multi-agent LLM pipeline can take 40-60s
-
-                val payload = JSONObject().apply {
-                    put("scenario", scenarioName)
-                }
-                conn.outputStream.bufferedWriter().use { it.write(payload.toString()) }
-
-                val code = conn.responseCode
-                val body = if (code in 200..299) {
-                    conn.inputStream.bufferedReader().readText()
-                } else {
-                    conn.errorStream?.bufferedReader()?.readText() ?: "Error $code"
-                }
-
-                _scenarioStatus.value = if (code in 200..299) {
-                    "✓ $scenarioName triggered successfully"
-                } else {
-                    "✗ Failed ($code): ${body.take(100)}"
-                }
-                conn.disconnect()
+                val incidentIds = repository.publishDemoScenario(scenarioName)
+                _scenarioStatus.value = "✓ $scenarioName written to Firestore (${incidentIds.size} incident${if (incidentIds.size == 1) "" else "s"})"
 
                 // Clear status after 5 seconds
                 kotlinx.coroutines.delay(5000)
                 _scenarioStatus.value = null
             } catch (e: Exception) {
                 Log.e("DashboardVM", "Scenario trigger failed: ${e.message}")
-                _scenarioStatus.value = "✗ Connection failed: ${e.message?.take(80)}"
+                _scenarioStatus.value = "✗ Firestore write failed: ${e.message?.take(80)}"
                 kotlinx.coroutines.delay(5000)
                 _scenarioStatus.value = null
             }
