@@ -10,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -40,6 +41,7 @@ import com.ciro.app.ui.theme.CiroColors
  * Uses basicMarquee for continuous horizontal scrolling of each headline,
  * plus AnimatedContent for smooth transitions between headlines.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BreakingTicker(
     updates: List<LiveUpdate>,
