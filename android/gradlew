@@ -13,7 +13,7 @@
 APP_HOME=$( cd "${APP_HOME:-./}" > /dev/null && pwd -P ) || exit
 
 # Add default JVM options here
-DEFAULT_JVM_OPTS='"-Xmx2048m" "-Xms256m"'
+DEFAULT_JVM_OPTS="-Xmx2048m -Xms256m"
 
 # Determine the Java command to use
 if [ -n "$JAVA_HOME" ] ; then

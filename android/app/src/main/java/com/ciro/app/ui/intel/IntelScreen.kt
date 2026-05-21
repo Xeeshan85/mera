@@ -2,6 +2,7 @@ package com.ciro.app.ui.intel
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +38,7 @@ import com.ciro.app.data.model.IntelligenceSnapshot
 import com.ciro.app.data.model.NewsItem
 import com.ciro.app.ui.components.SparklineChart
 import com.ciro.app.ui.theme.CiroColors
+import com.ciro.app.util.IntentUtils
 
 /**
  * Intel Screen — Signal Intelligence Center (WorldMonitor-inspired).
@@ -422,6 +425,7 @@ fun IntelScreen(
 
 @Composable
 private fun NewsRow(article: NewsItem) {
+    val context = LocalContext.current
     val urgencyColor = when (article.urgency) {
         "critical" -> CiroColors.AccentRed
         "warning" -> CiroColors.AccentOrange
@@ -433,6 +437,9 @@ private fun NewsRow(article: NewsItem) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(CiroColors.SurfaceCard)
+            .clickable(enabled = article.url.isNotBlank()) {
+                IntentUtils.openUrl(context, article.url)
+            }
             .padding(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -450,10 +457,21 @@ private fun NewsRow(article: NewsItem) {
                 color = CiroColors.TextPrimary,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
-                maxLines = 2,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
                 lineHeight = 16.sp,
             )
+            if (article.description.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = article.description,
+                    color = CiroColors.TextSecondary,
+                    fontSize = 10.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 14.sp,
+                )
+            }
             Spacer(Modifier.height(4.dp))
             Row {
                 Text(

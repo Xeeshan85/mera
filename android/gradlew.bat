@@ -4,7 +4,7 @@
 
 @if "%DEBUG%"=="" @echo off
 
-set DEFAULT_JVM_OPTS="-Xmx2048m" "-Xms256m"
+set DEFAULT_JVM_OPTS=-Xmx2048m -Xms256m
 
 set DIRNAME=%~dp0
 set APP_HOME=%DIRNAME%

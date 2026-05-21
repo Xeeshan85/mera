@@ -212,6 +212,14 @@ fun PulseScreen(
                     },
                 )
             }
+            item {
+                HeadlineRail(
+                    updates = liveUpdates.take(10),
+                    onTap = { update ->
+                        update.incident_id?.let { onIncidentClick(it) }
+                    },
+                )
+            }
         }
 
         // ── Threat Gauge + Pakistan Silhouette ────────────────────
@@ -369,6 +377,70 @@ private fun SituationStat(emoji: String, value: String, label: String) {
             color = CiroColors.TextMuted,
             fontSize = 9.sp,
         )
+    }
+}
+
+@Composable
+private fun HeadlineRail(updates: List<LiveUpdate>, onTap: (LiveUpdate) -> Unit) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(end = 16.dp),
+    ) {
+        items(updates, key = { it.update_id }) { update ->
+            val color = when {
+                update.is_breaking -> CiroColors.AccentRed
+                update.severity_level >= 2 -> CiroColors.AccentOrange
+                else -> CiroColors.AccentCyan
+            }
+
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = CiroColors.SurfaceCard),
+                modifier = Modifier
+                    .width(230.dp)
+                    .clickable { onTap(update) }
+                    .border(1.dp, color.copy(alpha = 0.18f), RoundedCornerShape(12.dp)),
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(color),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = update.source.ifBlank { "LIVE" }.uppercase().take(18),
+                            color = color,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = update.headline,
+                        color = CiroColors.TextPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        lineHeight = 16.sp,
+                    )
+                    if (update.timestamp.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = update.timestamp.take(16).replace("T", " "),
+                            color = CiroColors.TextMuted,
+                            fontSize = 9.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -96,14 +96,17 @@ class DashboardViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
-     * Signal intelligence — computed CLIENT-SIDE from raw signals.
-     * No dependency on the backend intelligence service.
+     * Signal intelligence from Firestore when the backend has written a snapshot,
+     * with client-side computation and synthetic demo data as fallbacks.
      */
     val intelligence: StateFlow<IntelligenceSnapshot> = combine(
+        repository.observeIntelligence().catch { emit(null) },
         repository.observeSignals().catch { emit(emptyList()) },
         incidents
-    ) { signalsList, incidentsList ->
-        if (signalsList.size > 2) {
+    ) { firestoreIntel, signalsList, incidentsList ->
+        if (firestoreIntel?.hasMeaningfulIntel() == true) {
+            firestoreIntel
+        } else if (signalsList.size > 2) {
             computeIntelFromSignals(signalsList)
         } else {
             generateSyntheticIntelligence(incidentsList)
@@ -111,9 +114,18 @@ class DashboardViewModel(
     }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), IntelligenceSnapshot())
 
-    /** News headlines (loaded via REST, not Firestore listener). */
-    private val _news = MutableStateFlow<List<NewsItem>>(emptyList())
-    val news: StateFlow<List<NewsItem>> = _news.asStateFlow()
+    /** News headlines from Firestore cache plus REST refresh fallback. */
+    private val _networkNews = MutableStateFlow<List<NewsItem>>(emptyList())
+    val news: StateFlow<List<NewsItem>> = combine(
+        repository.observeNewsHeadlines().catch { emit(emptyList()) },
+        _networkNews,
+    ) { firestoreNews, networkNews ->
+        (firestoreNews + networkNews)
+            .filter { it.title.isNotBlank() }
+            .distinctBy { it.url.ifBlank { it.title } }
+            .take(20)
+    }
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Admin panel visibility. */
     private val _showAdminPanel = MutableStateFlow(false)
@@ -132,6 +144,7 @@ class DashboardViewModel(
 
     init {
         loadNews()
+        refreshIntelligenceSnapshot()
         seedLiveUpdatesIfEmpty()
     }
 
@@ -166,7 +179,7 @@ class DashboardViewModel(
                             urgency = a.optString("urgency", "info")
                         ))
                     }
-                    _news.value = items
+                    _networkNews.value = items
                     Log.d("DashboardVM", "Loaded ${items.size} news articles")
                 }
                 conn.disconnect()
@@ -204,12 +217,35 @@ class DashboardViewModel(
                         urgency = classifyUrgency(a.optString("title", "")),
                     ))
                 }
-                _news.value = items
+                _networkNews.value = items
                 Log.d("DashboardVM", "GNews fallback loaded ${items.size} articles")
             }
             conn.disconnect()
         } catch (e: Exception) {
             Log.e("DashboardVM", "GNews fallback also failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Ask the backend to recompute live_intelligence/latest.
+     * The UI still updates from the Firestore listener, not this response.
+     */
+    private fun refreshIntelligenceSnapshot() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val url = URL("$backendUrl/api/intelligence/refresh")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 10000
+                conn.readTimeout = 20000
+                conn.requestMethod = "POST"
+
+                if (conn.responseCode !in 200..299) {
+                    Log.w("DashboardVM", "Intel refresh failed with HTTP ${conn.responseCode}")
+                }
+                conn.disconnect()
+            } catch (e: Exception) {
+                Log.w("DashboardVM", "Intel refresh skipped: ${e.message}")
+            }
         }
     }
 
@@ -222,6 +258,13 @@ class DashboardViewModel(
             warning.any { it in lower } -> "warning"
             else -> "info"
         }
+    }
+
+    private fun IntelligenceSnapshot.hasMeaningfulIntel(): Boolean {
+        return total_signals > 0 ||
+            mention_velocity.buckets.isNotEmpty() ||
+            trending_keywords.isNotEmpty() ||
+            source_health.any { it.signal_count > 0 }
     }
 
     /**

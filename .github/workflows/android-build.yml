@@ -22,7 +22,22 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x android/gradlew
 
+    - name: Restore Firebase Android config
+      env:
+        GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+      run: |
+        if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+          echo "Missing GitHub secret GOOGLE_SERVICES_JSON. Add android/app/google-services.json contents as this secret."
+          exit 1
+        fi
+        printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+
     - name: Build Debug APK
+      env:
+        JAVA_TOOL_OPTIONS: ""
+        _JAVA_OPTIONS: ""
+        JAVA_OPTS: ""
+        GRADLE_OPTS: ""
       run: |
         cd android
         ./gradlew assembleDebug

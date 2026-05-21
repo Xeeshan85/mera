@@ -6,6 +6,7 @@ import com.ciro.app.data.model.CiroNotification
 import com.ciro.app.data.model.ConflictingHypothesis
 import com.ciro.app.data.model.Incident
 import com.ciro.app.data.model.IncidentLocation
+import com.ciro.app.data.model.NewsItem
 import com.ciro.app.data.model.PipelineMetric
 import com.ciro.app.data.model.Resource
 import com.ciro.app.data.model.ResourceLocation
@@ -185,6 +186,29 @@ class CiroRepository(
                     doc.data?.let { mapToLiveUpdate(it) }
                 } ?: emptyList()
                 trySend(updates)
+            }
+        awaitClose { registration.remove() }
+    }
+
+    /**
+     * Observe backend-cached media headlines.
+     * Backend /api/news writes news_cache/latest; installed APKs listen here
+     * so fresh headlines propagate through Firestore instead of only HTTP.
+     */
+    @Suppress("UNCHECKED_CAST")
+    fun observeNewsHeadlines(): Flow<List<NewsItem>> = callbackFlow {
+        val registration = db.collection("news_cache")
+            .document("latest")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                val headlines = snapshot?.data?.let { data ->
+                    val rawHeadlines = data["headlines"] as? List<Map<String, Any>> ?: emptyList()
+                    rawHeadlines.mapNotNull { mapToNewsItem(it) }
+                } ?: emptyList()
+                trySend(headlines)
             }
         awaitClose { registration.remove() }
     }
@@ -414,6 +438,24 @@ class CiroRepository(
             location = data["location"] as? String ?: "",
             timestamp = data["timestamp"] as? String ?: "",
             is_breaking = data["is_breaking"] as? Boolean ?: false,
+        )
+    }
+
+    private fun mapToNewsItem(data: Map<String, Any>): NewsItem? {
+        val title = data["title"] as? String ?: ""
+        if (title.isBlank()) return null
+
+        return NewsItem(
+            news_id = data["news_id"] as? String
+                ?: data["url"] as? String
+                ?: title.hashCode().toString(),
+            title = title,
+            description = data["description"] as? String ?: "",
+            source = data["source"] as? String ?: "News",
+            url = data["url"] as? String ?: "",
+            image_url = data["image_url"] as? String ?: data["image"] as? String ?: "",
+            published_at = data["published_at"] as? String ?: data["publishedAt"] as? String ?: "",
+            urgency = data["urgency"] as? String ?: "info",
         )
     }
 

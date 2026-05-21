@@ -31,6 +31,7 @@ class NewsService:
         # Check cache
         cached = self._get_cached()
         if cached:
+            self._write_live_updates(cached[:max_items])
             return cached[:max_items]
 
         # Try GNews API
@@ -41,6 +42,7 @@ class NewsService:
 
         if headlines:
             self._write_cache(headlines)
+            self._write_live_updates(headlines)
         return headlines
 
     def _get_cached(self) -> Optional[list[dict]]:
@@ -70,6 +72,31 @@ class NewsService:
         except Exception as e:
             logger.warning(f"News cache write failed: {e}")
 
+    def _write_live_updates(self, headlines: list[dict]):
+        """Mirror headlines into live_updates for the Pulse ticker."""
+        try:
+            batch = self._db.batch()
+            for headline in headlines[:10]:
+                update_id = headline.get("news_id") or _stable_news_id(
+                    headline.get("url", ""),
+                    headline.get("title", ""),
+                )
+                doc_ref = self._db.collection("live_updates").document(update_id)
+                batch.set(doc_ref, {
+                    "update_id": update_id,
+                    "headline": headline.get("title", ""),
+                    "crisis_type": "",
+                    "severity_level": _urgency_to_severity(headline.get("urgency", "info")),
+                    "incident_id": None,
+                    "source": headline.get("source", "News"),
+                    "location": "Pakistan",
+                    "timestamp": headline.get("published_at") or datetime.utcnow().isoformat(),
+                    "is_breaking": headline.get("urgency") in {"critical", "warning"},
+                }, merge=True)
+            batch.commit()
+        except Exception as e:
+            logger.warning(f"Live update write failed: {e}")
+
     def _fetch_gnews(self, max_items: int) -> list[dict]:
         """Fetch from GNews API (free tier: 100 req/day, 10 per request)."""
         if not GNEWS_API_KEY:
@@ -88,7 +115,7 @@ class NewsService:
             articles = data.get("articles", [])
             return [
                 {
-                    "news_id": str(uuid.uuid4()),
+                    "news_id": _stable_news_id(a.get("url", ""), a.get("title", "")),
                     "title": a.get("title", ""),
                     "description": a.get("description", ""),
                     "source": a.get("source", {}).get("name", "Unknown"),
@@ -110,7 +137,7 @@ class NewsService:
             feed = feedparser.parse(DAWN_RSS)
             return [
                 {
-                    "news_id": str(uuid.uuid4()),
+                    "news_id": _stable_news_id(entry.get("link", ""), entry.get("title", "")),
                     "title": entry.get("title", ""),
                     "description": entry.get("summary", "")[:200],
                     "source": "Dawn",
@@ -138,3 +165,17 @@ def _classify_urgency(text: str) -> str:
     if any(w in text_lower for w in warning_words):
         return "warning"
     return "info"
+
+
+def _stable_news_id(url: str, title: str) -> str:
+    """Stable Firestore document ID for a media article."""
+    key = url or title or str(uuid.uuid4())
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, key))
+
+
+def _urgency_to_severity(urgency: str) -> int:
+    if urgency == "critical":
+        return 4
+    if urgency == "warning":
+        return 2
+    return 0

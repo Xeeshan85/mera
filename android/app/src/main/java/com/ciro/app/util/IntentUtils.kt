@@ -40,6 +40,12 @@ object IntentUtils {
         context.startActivity(intent)
     }
 
+    /** Opens a web URL in the user's default browser. */
+    fun openUrl(context: Context, url: String) {
+        if (url.isBlank()) return
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+
     /**
      * Shares a formatted incident report via Android Share Sheet.
      * Lets the responder send via WhatsApp, SMS, Email, etc.

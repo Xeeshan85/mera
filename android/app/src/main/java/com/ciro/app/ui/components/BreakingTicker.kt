@@ -1,15 +1,11 @@
 package com.ciro.app.ui.components
 
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -38,8 +34,7 @@ import com.ciro.app.ui.theme.CiroColors
 
 /**
  * Auto-scrolling breaking news ticker with pulsing red dot for breaking items.
- * Uses basicMarquee for continuous horizontal scrolling of each headline,
- * plus AnimatedContent for smooth transitions between headlines.
+ * Uses basicMarquee for a continuous horizontal tape of recent headlines.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -53,6 +48,12 @@ fun BreakingTicker(
 
     val current = updates[currentIndex.coerceIn(0, updates.lastIndex)]
     val isBreaking = current.is_breaking
+    val tickerText = updates
+        .take(12)
+        .joinToString(separator = "     •     ") { update ->
+            val source = update.source.ifBlank { "LIVE" }.uppercase()
+            "$source: ${update.headline}"
+        }
 
     val pulse = rememberInfiniteTransition(label = "ticker_pulse")
     val dotAlpha by pulse.animateFloat(
@@ -96,31 +97,22 @@ fun BreakingTicker(
         )
         Spacer(Modifier.width(8.dp))
 
-        // Headline text — AnimatedContent slides between headlines,
-        // basicMarquee scrolls long text horizontally within each headline.
-        AnimatedContent(
-            targetState = currentIndex,
-            transitionSpec = {
-                slideInHorizontally { width -> width } togetherWith
-                    slideOutHorizontally { width -> -width }
-            },
-            modifier = Modifier.weight(1f),
-            label = "ticker_headline",
-        ) { idx ->
-            val update = updates.getOrElse(idx) { current }
-            Text(
-                text = update.headline,
-                color = CiroColors.TextPrimary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Clip,
-                modifier = Modifier.basicMarquee(
+        Text(
+            text = tickerText,
+            color = CiroColors.TextPrimary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Clip,
+            modifier = Modifier
+                .weight(1f)
+                .basicMarquee(
                     iterations = Int.MAX_VALUE,
-                    velocity = 40.dp,
+                    velocity = 52.dp,
+                    initialDelayMillis = 0,
+                    repeatDelayMillis = 600,
                 ),
-            )
-        }
+        )
 
         // Severity badge
         if (current.severity_level > 0) {

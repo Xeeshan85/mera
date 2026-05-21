@@ -1,5 +1,6 @@
 package com.ciro.app.ui.components
 
+import android.graphics.Paint
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -17,10 +18,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -48,67 +51,33 @@ data class ProvinceZone(
  * Normalized: x = (lng - 60.8) / 17.0, y = (37.1 - lat) / 13.6  (inverted y for canvas)
  */
 private val PAKISTAN_OUTLINE = listOf(
-    // Starting from the northeast (near Karakoram / China border)
-    Offset(0.91f, 0.00f),   // NE tip (Karakoram)
-    Offset(0.88f, 0.04f),
-    Offset(0.82f, 0.07f),   // K2 region
-    Offset(0.77f, 0.09f),
-    Offset(0.73f, 0.07f),   // Gilgit area
-    Offset(0.68f, 0.10f),
-    Offset(0.64f, 0.13f),   // Chitral
-    Offset(0.59f, 0.10f),
-    Offset(0.55f, 0.12f),   // Dir
-    Offset(0.50f, 0.16f),   // Swat
-    Offset(0.47f, 0.19f),   // Peshawar region
-    Offset(0.44f, 0.23f),   // KP
-    Offset(0.40f, 0.28f),   // Khyber Pass / Afghan border
-    Offset(0.36f, 0.30f),
-    Offset(0.32f, 0.33f),
-    Offset(0.29f, 0.36f),   // Waziristan
-    Offset(0.26f, 0.40f),
-    Offset(0.22f, 0.44f),
-    Offset(0.19f, 0.47f),   // Zhob region
-    Offset(0.16f, 0.50f),
-    Offset(0.13f, 0.53f),
-    Offset(0.10f, 0.57f),   // Quetta region
-    Offset(0.08f, 0.60f),
-    Offset(0.06f, 0.64f),
-    Offset(0.04f, 0.68f),   // West Balochistan
-    Offset(0.02f, 0.72f),
-    Offset(0.00f, 0.76f),   // SW corner (Iran border)
-    Offset(0.03f, 0.80f),
-    Offset(0.07f, 0.83f),   // Gwadar coast
-    Offset(0.12f, 0.86f),   // Makran coast
-    Offset(0.18f, 0.88f),
-    Offset(0.24f, 0.90f),   // Pasni
-    Offset(0.30f, 0.91f),
-    Offset(0.36f, 0.93f),   // Coastal approach
-    Offset(0.40f, 0.95f),
-    Offset(0.44f, 0.97f),   // Near Karachi
-    Offset(0.48f, 0.98f),   // Karachi
-    Offset(0.52f, 1.00f),   // Indus Delta
-    Offset(0.55f, 0.97f),
-    Offset(0.57f, 0.93f),   // Thatta
-    Offset(0.58f, 0.88f),
-    Offset(0.60f, 0.83f),   // Lower Sindh
-    Offset(0.61f, 0.78f),
-    Offset(0.63f, 0.73f),   // Upper Sindh
-    Offset(0.64f, 0.68f),
-    Offset(0.66f, 0.62f),   // Sukkur
-    Offset(0.68f, 0.56f),   // Punjab border
-    Offset(0.70f, 0.50f),   // Multan region
-    Offset(0.73f, 0.45f),
-    Offset(0.76f, 0.40f),   // Lahore region
-    Offset(0.80f, 0.36f),
-    Offset(0.83f, 0.33f),   // Sialkot
-    Offset(0.85f, 0.30f),
-    Offset(0.88f, 0.26f),   // Islamabad region
-    Offset(0.90f, 0.22f),
-    Offset(0.92f, 0.18f),   // AJK
-    Offset(0.94f, 0.14f),
-    Offset(0.96f, 0.10f),
-    Offset(0.95f, 0.06f),
-    Offset(0.93f, 0.03f),   // Returning to NE
+    Offset(0.78f, 0.02f),   // Karakoram / NE highlands
+    Offset(0.68f, 0.04f),
+    Offset(0.58f, 0.03f),
+    Offset(0.50f, 0.08f),   // Gilgit-Baltistan shoulder
+    Offset(0.42f, 0.15f),
+    Offset(0.36f, 0.24f),   // KP western edge
+    Offset(0.30f, 0.30f),
+    Offset(0.24f, 0.38f),
+    Offset(0.17f, 0.47f),   // Balochistan bulge
+    Offset(0.10f, 0.58f),
+    Offset(0.05f, 0.70f),
+    Offset(0.08f, 0.80f),   // Makran coast begins
+    Offset(0.18f, 0.87f),
+    Offset(0.31f, 0.90f),
+    Offset(0.44f, 0.94f),
+    Offset(0.52f, 0.98f),   // Indus delta / Karachi
+    Offset(0.58f, 0.92f),
+    Offset(0.59f, 0.83f),
+    Offset(0.61f, 0.73f),   // Sindh eastern edge
+    Offset(0.64f, 0.64f),
+    Offset(0.68f, 0.56f),   // Punjab
+    Offset(0.74f, 0.48f),
+    Offset(0.80f, 0.40f),
+    Offset(0.87f, 0.34f),   // Kashmir hook
+    Offset(0.95f, 0.22f),
+    Offset(0.92f, 0.14f),
+    Offset(0.84f, 0.08f),
 )
 
 // Province center positions (normalized 0-1)
@@ -146,9 +115,58 @@ fun PakistanSilhouette(
             val w = this.size.width
             val h = this.size.height
 
-            // Padding to keep the outline inside
-            val padX = w * 0.05f
-            val padY = h * 0.03f
+            val globePad = w.coerceAtMost(h) * 0.03f
+            val globeTopLeft = Offset(globePad, globePad)
+            val globeSize = Size(w - globePad * 2, h - globePad * 2)
+
+            drawOval(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        CiroColors.SurfaceElevated,
+                        CiroColors.PakistanGreen.copy(alpha = 0.42f),
+                        CiroColors.SurfaceTerminal,
+                    ),
+                    center = Offset(w * 0.34f, h * 0.24f),
+                    radius = w.coerceAtMost(h) * 0.72f,
+                ),
+                topLeft = globeTopLeft,
+                size = globeSize,
+            )
+
+            drawOval(
+                color = CiroColors.AccentCyan.copy(alpha = 0.35f),
+                topLeft = globeTopLeft,
+                size = globeSize,
+                style = Stroke(width = 1.3f),
+            )
+
+            // Globe latitude / longitude grid.
+            listOf(0.28f, 0.50f, 0.72f).forEach { yRatio ->
+                drawArc(
+                    color = CiroColors.AccentCyan.copy(alpha = 0.13f),
+                    startAngle = 0f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    topLeft = Offset(globeTopLeft.x + globeSize.width * 0.08f, globeTopLeft.y + globeSize.height * yRatio - globeSize.height * 0.10f),
+                    size = Size(globeSize.width * 0.84f, globeSize.height * 0.20f),
+                    style = Stroke(width = 0.8f),
+                )
+            }
+            listOf(0.28f, 0.50f, 0.72f).forEach { xRatio ->
+                drawArc(
+                    color = CiroColors.AccentCyan.copy(alpha = 0.13f),
+                    startAngle = 90f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    topLeft = Offset(globeTopLeft.x + globeSize.width * xRatio - globeSize.width * 0.10f, globeTopLeft.y + globeSize.height * 0.08f),
+                    size = Size(globeSize.width * 0.20f, globeSize.height * 0.84f),
+                    style = Stroke(width = 0.8f),
+                )
+            }
+
+            // Padding to keep Pakistan inside the sphere.
+            val padX = w * 0.14f
+            val padY = h * 0.06f
             val drawW = w - padX * 2
             val drawH = h - padY * 2
 
@@ -162,13 +180,27 @@ fun PakistanSilhouette(
                 close()
             }
 
+            // Country shadow for the raised 3D map effect.
+            drawPath(
+                path = Path().apply {
+                    PAKISTAN_OUTLINE.forEachIndexed { idx, pt ->
+                        val x = padX + pt.x * drawW + 3f
+                        val y = padY + pt.y * drawH + 4f
+                        if (idx == 0) moveTo(x, y) else lineTo(x, y)
+                    }
+                    close()
+                },
+                color = Color.Black.copy(alpha = 0.28f),
+            )
+
             // Fill with subtle gradient
             drawPath(
                 path = outline,
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        CiroColors.PakistanGreen.copy(alpha = 0.08f),
-                        CiroColors.AccentCyan.copy(alpha = 0.04f),
+                        CiroColors.PakistanGreen.copy(alpha = 0.88f),
+                        CiroColors.PakistanGreen.copy(alpha = 0.52f),
+                        CiroColors.AccentCyan.copy(alpha = 0.18f),
                     ),
                 ),
             )
@@ -176,15 +208,27 @@ fun PakistanSilhouette(
             // Border stroke
             drawPath(
                 path = outline,
-                color = CiroColors.AccentCyan.copy(alpha = 0.4f),
-                style = Stroke(width = 1.8f),
+                color = CiroColors.PakistanWhite.copy(alpha = 0.88f),
+                style = Stroke(width = 2.0f),
             )
 
             // Inner highlight stroke
             drawPath(
                 path = outline,
-                color = CiroColors.PakistanGreen.copy(alpha = 0.15f),
-                style = Stroke(width = 0.8f),
+                color = CiroColors.AccentCyan.copy(alpha = 0.4f),
+                style = Stroke(width = 0.9f),
+            )
+
+            // Indus river trace, enough geography to make the silhouette legible.
+            val river = Path().apply {
+                moveTo(padX + 0.58f * drawW, padY + 0.14f * drawH)
+                quadraticBezierTo(padX + 0.53f * drawW, padY + 0.29f * drawH, padX + 0.63f * drawW, padY + 0.47f * drawH)
+                quadraticBezierTo(padX + 0.56f * drawW, padY + 0.66f * drawH, padX + 0.54f * drawW, padY + 0.91f * drawH)
+            }
+            drawPath(
+                path = river,
+                color = CiroColors.AccentCyan.copy(alpha = 0.72f),
+                style = Stroke(width = 1.6f),
             )
 
             // Draw province zones
@@ -245,6 +289,20 @@ fun PakistanSilhouette(
                     )
                 }
             }
+
+            val labelPaint = Paint().apply {
+                color = android.graphics.Color.argb(190, 230, 237, 243)
+                textAlign = Paint.Align.CENTER
+                textSize = w.coerceAtMost(h) * 0.065f
+                isFakeBoldText = true
+                isAntiAlias = true
+            }
+            drawContext.canvas.nativeCanvas.drawText(
+                "PAKISTAN",
+                w * 0.50f,
+                h * 0.55f,
+                labelPaint,
+            )
         }
 
         // Overlay province labels via Column (only for active provinces)
