@@ -278,8 +278,8 @@ class DashboardViewModel(
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.doOutput = true
-                conn.connectTimeout = 10000
-                conn.readTimeout = 30000
+                conn.connectTimeout = 15000
+                conn.readTimeout = 90000 // Multi-agent LLM pipeline can take 40-60s
 
                 val payload = JSONObject().apply {
                     put("scenario", scenarioName)
