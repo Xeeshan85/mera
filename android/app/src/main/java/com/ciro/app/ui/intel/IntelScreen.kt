@@ -88,13 +88,20 @@ fun IntelScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = "MENTION VELOCITY",
-                            color = CiroColors.TextMuted,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.5.sp,
-                        )
+                        Column {
+                            Text(
+                                text = "MENTION VELOCITY",
+                                color = CiroColors.TextMuted,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.5.sp,
+                            )
+                            Text(
+                                text = "Incoming OSINT signal rate",
+                                color = CiroColors.TextSecondary,
+                                fontSize = 8.sp,
+                            )
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = when (intelligence.mention_velocity.trend) {
@@ -178,6 +185,11 @@ fun IntelScreen(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp,
                         )
+                        Text(
+                            text = "Public urgency level",
+                            color = CiroColors.TextSecondary,
+                            fontSize = 7.sp,
+                        )
                         Spacer(Modifier.height(8.dp))
                         Text(
                             text = when (intelligence.sentiment.label) {
@@ -223,6 +235,11 @@ fun IntelScreen(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp,
                         )
+                        Text(
+                            text = "Source verification confidence",
+                            color = CiroColors.TextSecondary,
+                            fontSize = 7.sp,
+                        )
                         Spacer(Modifier.height(8.dp))
                         // Star rating
                         Text(
@@ -255,11 +272,16 @@ fun IntelScreen(
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
-                        text = "SIGNAL SOURCES",
+                        text = "SOURCE HEALTH",
                         color = CiroColors.TextMuted,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.5.sp,
+                    )
+                    Text(
+                        text = "Status of connected data pipelines",
+                        color = CiroColors.TextSecondary,
+                        fontSize = 8.sp,
                     )
                     Spacer(Modifier.height(10.dp))
                     Row(
@@ -308,6 +330,11 @@ fun IntelScreen(
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.5.sp,
+                )
+                Text(
+                    text = "Topics driving the mention velocity",
+                    color = CiroColors.TextSecondary,
+                    fontSize = 8.sp,
                 )
                 Spacer(Modifier.height(8.dp))
                 FlowRow(

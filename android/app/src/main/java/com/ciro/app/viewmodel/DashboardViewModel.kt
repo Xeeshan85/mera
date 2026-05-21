@@ -256,14 +256,30 @@ class DashboardViewModel(
     /** Synthetic live updates generated from incidents when Firestore is empty. */
     private val _syntheticLiveUpdates = MutableStateFlow<List<LiveUpdate>>(emptyList())
 
-    /** Merged live updates = Firestore real ones + synthetic fallback. */
-    val mergedLiveUpdates: StateFlow<List<LiveUpdate>> = repository.observeLiveUpdates()
-        .catch { emit(emptyList()) }
-        .map { firestoreUpdates ->
-            if (firestoreUpdates.isNotEmpty()) firestoreUpdates
-            else _syntheticLiveUpdates.value
+    /** Merged live updates = Firestore real ones + synthetic fallback + actual live internet news */
+    val mergedLiveUpdates: StateFlow<List<LiveUpdate>> = combine(
+        repository.observeLiveUpdates().catch { emit(emptyList()) },
+        _syntheticLiveUpdates,
+        news
+    ) { firestoreUpdates, syntheticUpdates, currentNews ->
+        val baseUpdates = if (firestoreUpdates.isNotEmpty()) firestoreUpdates else syntheticUpdates
+        
+        // Convert the top 10 live news headlines into LiveUpdate objects
+        val newsUpdates = currentNews.take(10).map { item ->
+            LiveUpdate(
+                update_id = item.news_id,
+                timestamp = item.published_at,
+                headline = item.title,
+                source = item.source,
+                is_breaking = item.urgency == "critical" || item.urgency == "warning",
+                severity_level = if (item.urgency == "critical") 4 else if (item.urgency == "warning") 2 else 0
+            )
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        
+        // Merge news updates at the front of the ticker
+        (newsUpdates + baseUpdates).distinctBy { it.update_id }
+    }
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
      * Trigger a scenario simulation on the backend.
