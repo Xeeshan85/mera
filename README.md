@@ -119,7 +119,7 @@ graph TB
 
 ---
 
-## Tech Stack
+## Tech Stack & Integrations
 
 | Layer | Technologies |
 |:------|:-------------|
@@ -127,8 +127,22 @@ graph TB
 | Backend | Python 3.11, FastAPI, Pydantic v2 |
 | Database | Cloud Firestore (real-time sync) |
 | Messaging | Cloud Pub/Sub (event bus), Firebase Cloud Messaging (push) |
-| External APIs | Google Weather, Routes, Geocoding, Places, GDACS, Apify, Open-Meteo, OpenWeatherMap |
-| Android | Kotlin, Jetpack Compose, Material 3, Google Maps SDK |
+| Android UI | Kotlin, Jetpack Compose, Material 3 |
+
+### APIs (Real & Mock)
+- **Real APIs Used:** 
+  - Google Gemini API (for all agent reasoning and intelligence)
+  - Firebase / Cloud Firestore API (for real-time data sync)
+  - Firebase Cloud Messaging (FCM) API (for push notifications)
+  - GNews API (for live Pakistan news feed fallback)
+- **Simulated / Mocked APIs (for demo safety):**
+  - Google Weather, Routes, Geocoding, and Places APIs (simulated in demo scenarios to avoid quota exhaustion during hackathon judging)
+  - GDACS & Apify Social Media (simulated signal fusion inputs)
+
+### Integrations Implemented
+- **Firebase Realtime Sync:** Bi-directional real-time data binding between the Python FastAPI backend pipeline and the Kotlin Jetpack Compose dashboard via Firestore listeners.
+- **Push Notification Engine:** Integrated Firebase Cloud Messaging (FCM) to dispatch targeted alerts to `public_alerts` and `emergency_services` topics natively to the Android app.
+- **RESTful Admin API:** Developed FastAPI endpoints (`/api/trigger-scenario`, `/api/news`) natively consumed by Retrofit/HttpURLConnection in the Android app to allow remote pipeline execution.
 
 ---
 
