@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CIRO | Crisis Intelligence & Response Orchestrator</title>
+    <!-- Use Google Fonts for the modern look -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #050505;
+            --text-primary: #F5F5F5;
+            --text-secondary: #888888;
+            --accent-cyan: #00E5FF;
+            --accent-orange: #FF9100;
+            --accent-green: #00E676;
+            --accent-purple: #D500F9;
+            --accent-red: #FF1744;
+            --card-bg: #111111;
+            --border-color: #222222;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            overflow: hidden; /* Hide main body scroll */
+            line-height: 1.6;
+        }
+
+        .presentation-container {
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scroll-snap-type: x mandatory;
+            scroll-behavior: smooth;
+            /* Hide scrollbar for clean look */
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+        .presentation-container::-webkit-scrollbar {
+            display: none;
+        }
+
+        .slide {
+            flex: 0 0 100vw;
+            height: 100vh;
+            scroll-snap-align: start;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 8% 10%;
+            position: relative;
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Typography */
+        h1 {
+            font-size: 5rem;
+            font-weight: 800;
+            letter-spacing: -2px;
+            margin-bottom: 1rem;
+            line-height: 1.1;
+        }
+
+        h2 {
+            font-size: 3.5rem;
+            font-weight: 600;
+            letter-spacing: -1px;
+            margin-bottom: 2rem;
+            color: var(--accent-cyan);
+        }
+
+        h3 {
+            font-size: 2.5rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        p {
+            font-size: 2rem;
+            color: var(--text-secondary);
+            max-width: 80%;
+            margin-bottom: 1.5rem;
+        }
+
+        .highlight {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        /* Animations */
+        .reveal {
+            opacity: 0;
+            transform: translateY(40px);
+            transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal.active {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        /* Staggered delays */
+        .delay-1 { transition-delay: 0.1s; }
+        .delay-2 { transition-delay: 0.2s; }
+        .delay-3 { transition-delay: 0.3s; }
+        .delay-4 { transition-delay: 0.4s; }
+
+        /* Grid Layouts for Data/Architecture */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4rem;
+            width: 100%;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 2rem;
+            width: 100%;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 2.5rem;
+            transition: transform 0.3s ease, border-color 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-10px);
+            border-color: var(--accent-cyan);
+        }
+
+        .card h4 {
+            font-size: 1.8rem;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+
+        .card p {
+            font-size: 1.3rem;
+            margin-bottom: 0;
+            width: 100%;
+        }
+
+        /* Navigation Hints */
+        .nav-hint {
+            position: absolute;
+            bottom: 3rem;
+            right: 4rem;
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .key {
+            border: 1px solid var(--border-color);
+            background: var(--card-bg);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            color: var(--text-primary);
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .tag.cyan { color: var(--accent-cyan); background: rgba(0, 229, 255, 0.1); }
+        .tag.orange { color: var(--accent-orange); background: rgba(255, 145, 0, 0.1); }
+        .tag.purple { color: var(--accent-purple); background: rgba(213, 0, 249, 0.1); }
+        .tag.green { color: var(--accent-green); background: rgba(0, 230, 118, 0.1); }
+        .tag.red { color: var(--accent-red); background: rgba(255, 23, 68, 0.1); }
+
+    </style>
+</head>
+<body>
+
+    <div class="presentation-container" id="container">
+        
+        <!-- Slide 1: Hero -->
+        <section class="slide">
+            <div class="tag cyan reveal">ADK 2.0 + Gemini 2.5 Flash</div>
+            <h1 class="reveal delay-1">CIRO</h1>
+            <p class="reveal delay-2" style="font-size: 2.5rem; color: var(--text-primary);">Crisis Intelligence & Response Orchestrator</p>
+            <p class="mono reveal delay-3">Target: Signal-to-dispatch in under 60 seconds.</p>
+            <div class="nav-hint reveal delay-4">Use <span class="key mono">→</span> to navigate</div>
+        </section>
+
+        <!-- Slide 2: The Problem -->
+        <section class="slide">
+            <h2 class="reveal">The Problem</h2>
+            <div class="grid-2">
+                <div class="reveal delay-1">
+                    <h3>Manual Coordination is Slow</h3>
+                    <p>Current urban emergency response in Islamabad takes <span class="highlight">10–20 minutes</span> just to process signals and dispatch units.</p>
+                </div>
+                <div class="reveal delay-2">
+                    <h3>Fragmented Data</h3>
+                    <p>Information exists in silos: social media, weather sensors, citizen calls, and global disaster alerts (GDACS) are rarely fused in real time.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 3: The Solution -->
+        <section class="slide">
+            <h2 class="reveal">The CIRO Solution</h2>
+            <p class="reveal delay-1" style="max-width: 100%;">An autonomous multi-agent system that detects crises, predicts severity, and allocates resources <span class="highlight">instantaneously</span>.</p>
+            
+            <div class="grid-3 reveal delay-2" style="margin-top: 2rem;">
+                <div class="card">
+                    <h4 style="color: var(--accent-purple);">🧠 Multi-Agent</h4>
+                    <p>5 specialized Gemini agents orchestrated by ADK 2.0 to handle distinct phases of crisis management.</p>
+                </div>
+                <div class="card">
+                    <h4 style="color: var(--accent-cyan);">⚡ Real-Time</h4>
+                    <p>Firestore-powered bi-directional synchronization between the backend and Android command center.</p>
+                </div>
+                <div class="card">
+                    <h4 style="color: var(--accent-orange);">🎯 Actionable</h4>
+                    <p>Not just an alert system. Generates dispatch routing, trade-off narratives, and bilingual push notifications.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 4: Architecture Overview -->
+        <section class="slide">
+            <h2 class="reveal">System Architecture</h2>
+            <div class="grid-2" style="align-items: center;">
+                <div class="reveal delay-1">
+                    <p><strong class="highlight">1. Signal Ingestion:</strong> Python FastAPI collects data from multiple sources.</p>
+                    <p><strong class="highlight">2. Event Bus:</strong> Cloud Pub/Sub routes signals to the Orchestrator.</p>
+                    <p><strong class="highlight">3. Agent Pipeline:</strong> ADK 2.0 manages agent states and reasoning.</p>
+                    <p><strong class="highlight">4. Live Data Sync:</strong> Cloud Firestore updates state instantly.</p>
+                    <p><strong class="highlight">5. Command Center:</strong> Native Android (Compose) app visualizes intelligence.</p>
+                </div>
+                <div class="card reveal delay-2" style="background: rgba(255,255,255,0.03); border-style: dashed;">
+                    <p class="mono" style="font-size: 1.1rem; color: var(--accent-cyan);">
+                        [External APIs] → (FastAPI / Signal Fusion) <br><br>
+                        ↓ (Pub/Sub) <br><br>
+                        [Orchestrator Agent 🧠] <br>
+                        ├── Detection 🔍 <br>
+                        ├── Severity 📈 <br>
+                        ├── Resources 🚑 <br>
+                        └── Notification 📢 <br><br>
+                        ↓ (Firestore / FCM) <br><br>
+                        [📱 Android Command Center]
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 5: Data APIs -->
+        <section class="slide">
+            <h2 class="reveal">APIs & Integrations</h2>
+            <div class="grid-2">
+                <div class="reveal delay-1">
+                    <div class="tag green">Real APIs</div>
+                    <p>• <strong>Google Gemini API:</strong> Core intelligence, reasoning, and classification.</p>
+                    <p>• <strong>Firebase Firestore:</strong> Live NoSQL database powering the UI.</p>
+                    <p>• <strong>Firebase Cloud Messaging:</strong> Targeted Android push notifications.</p>
+                    <p>• <strong>GNews API:</strong> Live Pakistani news feed parsing.</p>
+                </div>
+                <div class="reveal delay-2">
+                    <div class="tag orange">Mocked / Simulated Data</div>
+                    <p><em>To ensure safety and prevent quota exhaustion during judging:</em></p>
+                    <p>• <strong>Google Maps (Places/Routes):</strong> Simulated travel times and vulnerable facility scanning.</p>
+                    <p>• <strong>GDACS & Social Media:</strong> Injected synthetic JSON payloads representing live crisis signals.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 6: Multi-Agent Pipeline -->
+        <section class="slide">
+            <h2 class="reveal">The Multi-Agent Pipeline</h2>
+            <div class="grid-3">
+                <div class="card reveal delay-1">
+                    <h4 style="color: var(--accent-purple);">1. Orchestrator</h4>
+                    <p>The brain. Uses Confidence-based Routing (0.4 = monitor, 0.8 = full dispatch) to direct traffic.</p>
+                </div>
+                <div class="card reveal delay-2">
+                    <h4 style="color: var(--accent-cyan);">2. Detection</h4>
+                    <p>Classifies crisis type and resolves contradictions from noisy OSINT data.</p>
+                </div>
+                <div class="card reveal delay-3">
+                    <h4 style="color: var(--accent-orange);">3. Severity</h4>
+                    <p>Forecasts spread radius and cross-references vulnerable facilities.</p>
+                </div>
+                <div class="card reveal delay-4">
+                    <h4 style="color: var(--accent-green);">4. Resource Alloc.</h4>
+                    <p>Matches optimal units (e.g. Drones vs Firetrucks) based on travel time and availability.</p>
+                </div>
+                <div class="card reveal delay-5">
+                    <h4 style="color: var(--accent-red);">5. Notification</h4>
+                    <p>Generates tailored, bilingual (EN/UR) alerts for 6 distinct stakeholder profiles.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 7: Mobile App Features -->
+        <section class="slide">
+            <h2 class="reveal">Mobile Command Center</h2>
+            <p class="reveal delay-1">A native Android application built entirely with Jetpack Compose.</p>
+            <div class="grid-2 reveal delay-2" style="margin-top: 2rem;">
+                <div>
+                    <h3>Features</h3>
+                    <p>• <strong>Pulse Dashboard:</strong> Infinite-scroll breaking news ticker and pulsing geographic threat map.</p>
+                    <p>• <strong>Signal Intelligence:</strong> Real-time charts of mention velocity, credibility, and sentiment.</p>
+                    <p>• <strong>Response Tab:</strong> Global resource readiness metrics and active operation timelines.</p>
+                </div>
+                <div class="card" style="border-color: var(--accent-green);">
+                    <h4 style="color: var(--accent-green);">Hidden Admin Console</h4>
+                    <p>Long-press the logo to access the simulator. Trigger multi-crisis scenarios and view real-time latency metrics and expandable AI reasoning logs.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 8: Outro -->
+        <section class="slide">
+            <h1 class="reveal">Ready to Deploy.</h1>
+            <p class="reveal delay-1">The future of urban crisis management.</p>
+            <p class="mono reveal delay-2" style="color: var(--accent-cyan);">Google ADK Hackathon 2026</p>
+        </section>
+
+    </div>
+
+    <script>
+        // Smooth scroll handling
+        const container = document.getElementById('container');
+        const slides = document.querySelectorAll('.slide');
+        let currentSlide = 0;
+
+        // Intersection Observer for Animations
+        const observerOptions = {
+            root: container,
+            threshold: 0.3
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const reveals = entry.target.querySelectorAll('.reveal');
+                    reveals.forEach(el => el.classList.add('active'));
+                } else {
+                    // Optional: remove class to animate again when scrolling back
+                    // const reveals = entry.target.querySelectorAll('.reveal');
+                    // reveals.forEach(el => el.classList.remove('active'));
+                }
+            });
+        }, observerOptions);
+
+        slides.forEach(slide => observer.observe(slide));
+
+        // Keyboard Navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight') {
+                if (currentSlide < slides.length - 1) {
+                    currentSlide++;
+                    scrollToSlide(currentSlide);
+                }
+            } else if (e.key === 'ArrowLeft') {
+                if (currentSlide > 0) {
+                    currentSlide--;
+                    scrollToSlide(currentSlide);
+                }
+            }
+        });
+
+        // Update currentSlide based on scroll position (if user uses trackpad)
+        container.addEventListener('scroll', () => {
+            currentSlide = Math.round(container.scrollLeft / window.innerWidth);
+        }, { passive: true });
+
+        function scrollToSlide(index) {
+            const slide = slides[index];
+            if (slide) {
+                slide.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+    </script>
+</body>
+</html>

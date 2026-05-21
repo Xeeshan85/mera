@@ -143,17 +143,19 @@ class DashboardViewModel(
                 if (conn.responseCode == 200) {
                     val body = conn.inputStream.bufferedReader().readText()
                     val json = JSONObject(body)
-                    val arr = json.optJSONArray("articles") ?: JSONArray()
+                    val arr = json.optJSONArray("headlines") ?: json.optJSONArray("articles") ?: JSONArray()
                     val items = mutableListOf<NewsItem>()
                     for (i in 0 until arr.length()) {
                         val a = arr.getJSONObject(i)
                         items.add(NewsItem(
-                            news_id = a.optString("url", "news_$i"),
+                            news_id = a.optString("news_id", a.optString("url", "news_$i")),
                             title = a.optString("title", ""),
+                            description = a.optString("description", ""),
                             source = a.optString("source", "News"),
                             url = a.optString("url", ""),
-                            published_at = a.optString("published_at", ""),
-                            urgency = a.optString("urgency", "info"),
+                            image_url = a.optString("image_url", ""),
+                            published_at = a.optString("published_at", a.optString("publishedAt", "")),
+                            urgency = a.optString("urgency", "info")
                         ))
                     }
                     _news.value = items
