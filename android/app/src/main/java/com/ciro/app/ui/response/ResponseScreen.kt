@@ -98,13 +98,24 @@ fun ResponseScreen(
                     )
                     Spacer(Modifier.height(12.dp))
 
-                    // Overall readiness
-                    val allResources = agencies.flatMap { it.resources }
-                    val total = allResources.size.coerceAtLeast(1)
-                    val available = allResources.count { it.state == "AVAILABLE" }
-                    val dispatched = allResources.count { it.state == "DISPATCHED" }
-                    val maintenance = allResources.count { it.state == "MAINTENANCE" || it.state == "OFF_DUTY" }
-                    val readinessPercent = (available.toFloat() / total * 100).toInt()
+                    // Overall readiness — prefer agency resources, fallback to resources collection
+                    val agencyResources = agencies.flatMap { it.resources }
+                    val allResources = if (agencyResources.isNotEmpty()) agencyResources else emptyList()
+
+                    // Merge: use agency resources for type breakdown, but also include
+                    // the resources collection data for overall stats
+                    val totalFromResources = resources.size
+                    val availFromResources = resources.count { it.state == "AVAILABLE" }
+                    val dispatchedFromResources = resources.count { it.state == "DISPATCHED" || it.state == "SHADOW_COMMITTED" }
+                    val offlineFromResources = totalFromResources - availFromResources - dispatchedFromResources
+
+                    val total = if (allResources.isNotEmpty()) allResources.size else totalFromResources.coerceAtLeast(1)
+                    val available = if (allResources.isNotEmpty()) allResources.count { it.state == "AVAILABLE" } else availFromResources
+                    val dispatched = if (allResources.isNotEmpty()) allResources.count { it.state == "DISPATCHED" } else dispatchedFromResources
+                    val maintenance = if (allResources.isNotEmpty()) {
+                        allResources.count { it.state == "MAINTENANCE" || it.state == "OFF_DUTY" }
+                    } else offlineFromResources
+                    val readinessPercent = if (total > 0) (available.toFloat() / total * 100).toInt() else 0
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),

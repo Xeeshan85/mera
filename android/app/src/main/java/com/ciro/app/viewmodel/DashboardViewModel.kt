@@ -1,5 +1,6 @@
 package com.ciro.app.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ciro.app.data.model.Agency
@@ -19,6 +20,7 @@ import com.ciro.app.data.model.SourceHealth
 import com.ciro.app.data.model.TrendingKeyword
 import com.ciro.app.data.model.VelocityBucket
 import com.ciro.app.data.repository.CiroRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +28,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 /**
  * Central ViewModel for the barwaqt command-center.
@@ -104,9 +111,196 @@ class DashboardViewModel(
     private val _showAdminPanel = MutableStateFlow(false)
     val showAdminPanel: StateFlow<Boolean> = _showAdminPanel.asStateFlow()
 
+    /** Scenario trigger status. */
+    private val _scenarioStatus = MutableStateFlow<String?>(null)
+    val scenarioStatus: StateFlow<String?> = _scenarioStatus.asStateFlow()
+
     fun toggleAdminPanel() { _showAdminPanel.value = !_showAdminPanel.value }
     fun openAdminPanel() { _showAdminPanel.value = true }
     fun closeAdminPanel() { _showAdminPanel.value = false }
+
+    // Backend base URL — defaults to the Cloud Run deployment
+    private val backendUrl: String = "https://ciro-hackathon-2026-2.run.app"
+
+    init {
+        loadNews()
+        seedLiveUpdatesIfEmpty()
+    }
+
+    /**
+     * Fetch Pakistan news headlines from the backend /api/news endpoint.
+     * Falls back to GNews free API directly if backend is unreachable.
+     */
+    private fun loadNews() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val url = URL("$backendUrl/api/news")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
+                conn.requestMethod = "GET"
+
+                if (conn.responseCode == 200) {
+                    val body = conn.inputStream.bufferedReader().readText()
+                    val json = JSONObject(body)
+                    val arr = json.optJSONArray("articles") ?: JSONArray()
+                    val items = mutableListOf<NewsItem>()
+                    for (i in 0 until arr.length()) {
+                        val a = arr.getJSONObject(i)
+                        items.add(NewsItem(
+                            news_id = a.optString("url", "news_$i"),
+                            title = a.optString("title", ""),
+                            source = a.optString("source", "News"),
+                            url = a.optString("url", ""),
+                            published_at = a.optString("published_at", ""),
+                            urgency = a.optString("urgency", "info"),
+                        ))
+                    }
+                    _news.value = items
+                    Log.d("DashboardVM", "Loaded ${items.size} news articles")
+                }
+                conn.disconnect()
+            } catch (e: Exception) {
+                Log.e("DashboardVM", "News fetch failed: ${e.message}")
+                // Fallback: try GNews directly (free, 100 req/day)
+                loadNewsFromGNews()
+            }
+        }
+    }
+
+    /** Direct GNews fallback when backend is unreachable. */
+    private fun loadNewsFromGNews() {
+        try {
+            val gnewsKey = "" // Will work without key for limited requests
+            val url = URL("https://gnews.io/api/v4/top-headlines?country=pk&lang=en&max=10${if (gnewsKey.isNotEmpty()) "&apikey=$gnewsKey" else ""}")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+
+            if (conn.responseCode == 200) {
+                val body = conn.inputStream.bufferedReader().readText()
+                val json = JSONObject(body)
+                val arr = json.optJSONArray("articles") ?: JSONArray()
+                val items = mutableListOf<NewsItem>()
+                for (i in 0 until arr.length()) {
+                    val a = arr.getJSONObject(i)
+                    val src = a.optJSONObject("source")
+                    items.add(NewsItem(
+                        news_id = a.optString("url", "gnews_$i"),
+                        title = a.optString("title", ""),
+                        source = src?.optString("name") ?: "News",
+                        url = a.optString("url", ""),
+                        published_at = a.optString("publishedAt", ""),
+                        urgency = classifyUrgency(a.optString("title", "")),
+                    ))
+                }
+                _news.value = items
+                Log.d("DashboardVM", "GNews fallback loaded ${items.size} articles")
+            }
+            conn.disconnect()
+        } catch (e: Exception) {
+            Log.e("DashboardVM", "GNews fallback also failed: ${e.message}")
+        }
+    }
+
+    private fun classifyUrgency(title: String): String {
+        val lower = title.lowercase()
+        val critical = listOf("killed", "dead", "explosion", "bomb", "attack", "flood", "earthquake", "collapse")
+        val warning = listOf("injured", "fire", "protest", "alert", "warning", "emergency", "rescue")
+        return when {
+            critical.any { it in lower } -> "critical"
+            warning.any { it in lower } -> "warning"
+            else -> "info"
+        }
+    }
+
+    /**
+     * If the live_updates Firestore collection is empty, seed it with
+     * synthetic entries derived from the current incidents for the ticker.
+     */
+    private fun seedLiveUpdatesIfEmpty() {
+        viewModelScope.launch {
+            // Wait a bit for Firestore to deliver initial data
+            kotlinx.coroutines.delay(3000)
+            val currentUpdates = liveUpdates.value
+            val currentIncidents = allIncidents.value
+            if (currentUpdates.isEmpty() && currentIncidents.isNotEmpty()) {
+                val syntheticUpdates = currentIncidents.take(5).map { inc ->
+                    LiveUpdate(
+                        update_id = "seed_${inc.incident_id}",
+                        headline = "${inc.crisis_type.replace("_", " ").uppercase()} in ${inc.location.area_name} — Severity ${inc.severity_level}",
+                        crisis_type = inc.crisis_type,
+                        severity_level = inc.severity_level,
+                        incident_id = inc.incident_id,
+                        source = "barwaqt",
+                        location = inc.location.area_name,
+                        timestamp = inc.updated_at,
+                        is_breaking = inc.state == "CONFIRMED" && inc.severity_level >= 4,
+                    )
+                }
+                _syntheticLiveUpdates.value = syntheticUpdates
+            }
+        }
+    }
+
+    /** Synthetic live updates generated from incidents when Firestore is empty. */
+    private val _syntheticLiveUpdates = MutableStateFlow<List<LiveUpdate>>(emptyList())
+
+    /** Merged live updates = Firestore real ones + synthetic fallback. */
+    val mergedLiveUpdates: StateFlow<List<LiveUpdate>> = repository.observeLiveUpdates()
+        .catch { emit(emptyList()) }
+        .map { firestoreUpdates ->
+            if (firestoreUpdates.isNotEmpty()) firestoreUpdates
+            else _syntheticLiveUpdates.value
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Trigger a scenario simulation on the backend.
+     * Calls POST /api/trigger-scenario with the scenario name.
+     */
+    fun triggerScenario(scenarioName: String) {
+        _scenarioStatus.value = "Triggering $scenarioName..."
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val url = URL("$backendUrl/api/trigger-scenario")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.doOutput = true
+                conn.connectTimeout = 10000
+                conn.readTimeout = 30000
+
+                val payload = JSONObject().apply {
+                    put("scenario", scenarioName)
+                }
+                conn.outputStream.bufferedWriter().use { it.write(payload.toString()) }
+
+                val code = conn.responseCode
+                val body = if (code in 200..299) {
+                    conn.inputStream.bufferedReader().readText()
+                } else {
+                    conn.errorStream?.bufferedReader()?.readText() ?: "Error $code"
+                }
+
+                _scenarioStatus.value = if (code in 200..299) {
+                    "✓ $scenarioName triggered successfully"
+                } else {
+                    "✗ Failed ($code): ${body.take(100)}"
+                }
+                conn.disconnect()
+
+                // Clear status after 5 seconds
+                kotlinx.coroutines.delay(5000)
+                _scenarioStatus.value = null
+            } catch (e: Exception) {
+                Log.e("DashboardVM", "Scenario trigger failed: ${e.message}")
+                _scenarioStatus.value = "✗ Connection failed: ${e.message?.take(80)}"
+                kotlinx.coroutines.delay(5000)
+                _scenarioStatus.value = null
+            }
+        }
+    }
 
     // ── Selected incident for detail view ────────────────────────────────
 

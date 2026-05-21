@@ -218,13 +218,15 @@ fun CiroApp() {
                 val allIncidents by viewModel.allIncidents.collectAsState()
                 val metrics by viewModel.metrics.collectAsState()
                 val traces by viewModel.agentTraces.collectAsState()
+                val scenarioStatus by viewModel.scenarioStatus.collectAsState()
 
                 AdminPanel(
                     incidents = allIncidents,
                     metrics = metrics,
                     traces = traces,
+                    scenarioStatus = scenarioStatus,
                     onTriggerScenario = { scenarioName ->
-                        // TODO: Call backend /api/trigger-scenario via HTTP
+                        viewModel.triggerScenario(scenarioName)
                     },
                     onBack = { navController.popBackStack() },
                 )
@@ -269,7 +271,7 @@ fun MainScreen(
     val incidents by viewModel.incidents.collectAsState()
     val allIncidents by viewModel.allIncidents.collectAsState()
     val resources by viewModel.resources.collectAsState()
-    val liveUpdates by viewModel.liveUpdates.collectAsState()
+    val liveUpdates by viewModel.mergedLiveUpdates.collectAsState()
     val agencies by viewModel.agencies.collectAsState()
     val intelligence by viewModel.intelligence.collectAsState()
     val news by viewModel.news.collectAsState()

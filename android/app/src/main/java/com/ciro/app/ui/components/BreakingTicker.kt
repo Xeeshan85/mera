@@ -1,19 +1,22 @@
 package com.ciro.app.ui.components
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,7 +28,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -35,7 +37,8 @@ import com.ciro.app.ui.theme.CiroColors
 
 /**
  * Auto-scrolling breaking news ticker with pulsing red dot for breaking items.
- * Displays a single headline at a time with smooth horizontal translation.
+ * Uses basicMarquee for continuous horizontal scrolling of each headline,
+ * plus AnimatedContent for smooth transitions between headlines.
  */
 @Composable
 fun BreakingTicker(
@@ -55,15 +58,6 @@ fun BreakingTicker(
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(600, easing = LinearEasing), RepeatMode.Reverse),
         label = "dot",
-    )
-
-    // Slide animation
-    val slide = rememberInfiniteTransition(label = "ticker_slide")
-    val offsetX by slide.animateFloat(
-        initialValue = 0f,
-        targetValue = -2f,
-        animationSpec = infiniteRepeatable(tween(4000, easing = LinearEasing), RepeatMode.Restart),
-        label = "slide",
     )
 
     Row(
@@ -100,18 +94,31 @@ fun BreakingTicker(
         )
         Spacer(Modifier.width(8.dp))
 
-        // Headline text
-        Text(
-            text = current.headline,
-            color = CiroColors.TextPrimary,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .weight(1f)
-                .graphicsLayer { translationX = offsetX },
-        )
+        // Headline text — AnimatedContent slides between headlines,
+        // basicMarquee scrolls long text horizontally within each headline.
+        AnimatedContent(
+            targetState = currentIndex,
+            transitionSpec = {
+                slideInHorizontally { width -> width } togetherWith
+                    slideOutHorizontally { width -> -width }
+            },
+            modifier = Modifier.weight(1f),
+            label = "ticker_headline",
+        ) { idx ->
+            val update = updates.getOrElse(idx) { current }
+            Text(
+                text = update.headline,
+                color = CiroColors.TextPrimary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier.basicMarquee(
+                    iterations = Int.MAX_VALUE,
+                    velocity = 40.dp,
+                ),
+            )
+        }
 
         // Severity badge
         if (current.severity_level > 0) {
