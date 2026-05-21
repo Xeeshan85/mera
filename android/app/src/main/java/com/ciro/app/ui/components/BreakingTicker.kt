@@ -110,7 +110,7 @@ fun BreakingTicker(
                     iterations = Int.MAX_VALUE,
                     velocity = 52.dp,
                     initialDelayMillis = 0,
-                    repeatDelayMillis = 600,
+                    delayMillis = 600,
                 ),
         )
 
