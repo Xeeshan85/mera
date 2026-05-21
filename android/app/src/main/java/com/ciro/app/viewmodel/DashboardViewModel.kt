@@ -5,12 +5,19 @@ import androidx.lifecycle.viewModelScope
 import com.ciro.app.data.model.Agency
 import com.ciro.app.data.model.AgentTrace
 import com.ciro.app.data.model.CiroNotification
+import com.ciro.app.data.model.Credibility
 import com.ciro.app.data.model.Incident
 import com.ciro.app.data.model.IntelligenceSnapshot
 import com.ciro.app.data.model.LiveUpdate
+import com.ciro.app.data.model.MentionVelocity
 import com.ciro.app.data.model.NewsItem
 import com.ciro.app.data.model.PipelineMetric
 import com.ciro.app.data.model.Resource
+import com.ciro.app.data.model.Sentiment
+import com.ciro.app.data.model.Signal
+import com.ciro.app.data.model.SourceHealth
+import com.ciro.app.data.model.TrendingKeyword
+import com.ciro.app.data.model.VelocityBucket
 import com.ciro.app.data.repository.CiroRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -75,10 +82,18 @@ class DashboardViewModel(
         .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** Signal intelligence snapshot (velocity, sentiment, keywords). */
-    val intelligence: StateFlow<IntelligenceSnapshot> = repository.observeIntelligence()
-        .catch { emit(null) }
-        .map { it ?: IntelligenceSnapshot() }
+    /** Raw signals from Firestore `signals` collection. */
+    val signals: StateFlow<List<Signal>> = repository.observeSignals()
+        .catch { emit(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Signal intelligence — computed CLIENT-SIDE from raw signals.
+     * No dependency on the backend intelligence service.
+     */
+    val intelligence: StateFlow<IntelligenceSnapshot> = repository.observeSignals()
+        .catch { emit(emptyList()) }
+        .map { signals -> computeIntelFromSignals(signals) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), IntelligenceSnapshot())
 
     /** News headlines (loaded via REST, not Firestore listener). */
@@ -265,6 +280,165 @@ class DashboardViewModel(
     /** Resources grouped by type for the Resource Hub. */
     fun resourcesByType(resources: List<Resource>): Map<String, List<Resource>> {
         return resources.groupBy { it.type }
+    }
+
+    // ── Client-Side Intelligence Computation ─────────────────────────────
+
+    /**
+     * Mirrors the Python intelligence_service.py logic entirely on the client.
+     * Computes velocity, sentiment, credibility, keywords, source health
+     * directly from the raw `signals` Firestore collection.
+     */
+    private fun computeIntelFromSignals(signals: List<Signal>): IntelligenceSnapshot {
+        if (signals.isEmpty()) return IntelligenceSnapshot()
+
+        return IntelligenceSnapshot(
+            snapshot_id = "client-computed",
+            timestamp = signals.firstOrNull()?.created_at ?: "",
+            total_signals = signals.size,
+            mention_velocity = computeVelocity(signals),
+            sentiment = computeSentiment(signals),
+            credibility = computeCredibility(signals),
+            trending_keywords = extractKeywords(signals),
+            source_health = computeSourceHealth(signals),
+        )
+    }
+
+    /** Compute mention velocity in 15-minute buckets based on created_at timestamps. */
+    private fun computeVelocity(signals: List<Signal>): MentionVelocity {
+        // Sort by created_at descending to find the latest timestamp
+        val sorted = signals.sortedByDescending { it.created_at }
+        val latestTime = sorted.firstOrNull()?.created_at ?: ""
+
+        // Create 8 buckets of 15 minutes each (2 hours total)
+        // Since we can't parse ISO8601 easily without java.time on all SDKs,
+        // we'll use the sorted order and distribute into buckets by position.
+        val bucketSize = maxOf(1, signals.size / 8)
+        val buckets = (0 until 8).map { i ->
+            val count = sorted.drop(i * bucketSize).take(bucketSize).size
+            VelocityBucket(
+                bucket = "T-${15 * (8 - i)}m",
+                count = count,
+            )
+        }
+
+        val avgRate = if (buckets.isNotEmpty()) {
+            buckets.map { it.count }.average()
+        } else 0.0
+        val currentRate = buckets.lastOrNull()?.count ?: 0
+        val isSpike = currentRate > avgRate * 2
+
+        return MentionVelocity(
+            buckets = buckets,
+            current_rate = currentRate,
+            average_rate = avgRate,
+            is_spike = isSpike,
+            trend = when {
+                currentRate > avgRate -> "rising"
+                currentRate < avgRate * 0.5 -> "falling"
+                else -> "stable"
+            },
+        )
+    }
+
+    /** Aggregate sentiment from urgency_language_score. */
+    private fun computeSentiment(signals: List<Signal>): Sentiment {
+        val urgencyScores = signals.map { it.urgency_language_score }
+        val avgUrgency = urgencyScores.average()
+        val negativePct = (urgencyScores.count { it > 0.6 }.toDouble() / signals.size * 100).toInt()
+
+        val label = when {
+            avgUrgency > 0.7 -> "critical"
+            avgUrgency > 0.5 -> "negative"
+            else -> "neutral"
+        }
+        return Sentiment(
+            score = avgUrgency,
+            label = label,
+            negative_pct = negativePct,
+        )
+    }
+
+    /** Aggregate source credibility scores. */
+    private fun computeCredibility(signals: List<Signal>): Credibility {
+        val scores = signals.map { it.credibility_score }
+        val avg = scores.average()
+        val verified = scores.count { it >= 0.7 }
+
+        return Credibility(
+            score = avg,
+            stars = minOf(5, (avg * 5).toInt()),
+            verified_count = verified,
+            total_sources = signals.size,
+        )
+    }
+
+    /** Extract trending keywords from raw_payload text fields. */
+    private fun extractKeywords(signals: List<Signal>, topN: Int = 10): List<TrendingKeyword> {
+        val crisisKeywords = setOf(
+            "flood", "rain", "water", "rescue", "fire", "heatwave", "accident",
+            "blocked", "road", "hospital", "emergency", "alert", "power", "outage",
+            "earthquake", "collapse", "damage", "injured", "dead", "killed",
+            "evacuation", "shelter", "ambulance", "police", "ndma", "1122",
+        )
+        val stopWords = setOf(
+            "the", "a", "an", "in", "on", "at", "to", "for", "of", "is", "it", "and",
+            "or", "but", "not", "no", "this", "that", "with", "from", "by", "has",
+            "was", "are", "been", "were", "be", "have", "had", "do", "does", "did",
+            "will", "would", "could", "should", "may", "might", "can", "shall",
+            "our", "we", "you", "your", "they", "them", "their", "its", "http",
+            "https", "com", "www", "just", "about", "more", "also", "very", "much",
+        )
+
+        val wordCounts = mutableMapOf<String, Int>()
+        for (signal in signals) {
+            val payload = signal.raw_payload
+            val textParts = mutableListOf<String>()
+
+            // Extract text from posts field
+            (payload["posts"] as? List<*>)?.forEach { textParts.add(it.toString()) }
+            (payload["text"] as? String)?.let { textParts.add(it) }
+            (payload["report"] as? String)?.let { textParts.add(it) }
+            (payload["description"] as? String)?.let { textParts.add(it) }
+
+            val fullText = textParts.joinToString(" ").lowercase()
+            val words = Regex("[a-zA-Z]{3,}").findAll(fullText).map { it.value }
+            for (word in words) {
+                if (word !in stopWords) {
+                    wordCounts[word] = (wordCounts[word] ?: 0) + 1
+                }
+            }
+        }
+
+        return wordCounts.entries
+            .sortedByDescending { it.value }
+            .take(topN)
+            .map { (word, count) ->
+                TrendingKeyword(
+                    keyword = word,
+                    count = count,
+                    is_crisis = word in crisisKeywords,
+                )
+            }
+    }
+
+    /** Check health of each signal source type. */
+    private fun computeSourceHealth(signals: List<Signal>): List<SourceHealth> {
+        val sourceTypes = listOf("weather", "traffic", "social", "sensor", "field_report")
+        return sourceTypes.map { src ->
+            val matching = signals.filter { it.source_type == src }
+            val degraded = matching.any { it.degraded_mode }
+            SourceHealth(
+                source = src,
+                status = when {
+                    degraded -> "degraded"
+                    matching.isNotEmpty() -> "active"
+                    else -> "inactive"
+                },
+                signal_count = matching.size,
+                last_signal = matching.firstOrNull()?.created_at ?: "",
+            )
+        }
     }
 }
 

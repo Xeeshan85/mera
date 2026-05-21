@@ -10,6 +10,8 @@ import com.ciro.app.data.model.PipelineMetric
 import com.ciro.app.data.model.Resource
 import com.ciro.app.data.model.ResourceLocation
 import com.ciro.app.data.model.SeverityForecast
+import com.ciro.app.data.model.Signal
+import com.ciro.app.data.model.SignalLocation
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.channels.awaitClose
@@ -222,6 +224,30 @@ class CiroRepository(
                 }
                 val intel = snapshot?.data?.let { mapToIntelligence(it) }
                 trySend(intel)
+            }
+        awaitClose { registration.remove() }
+    }
+
+    // ── Raw Signals (for client-side Intel computation) ──────────────────
+
+    /**
+     * Observe raw signals from the `signals` collection.
+     * Ordered by created_at DESC, limited to 200 most recent.
+     * The ViewModel uses these to compute intelligence metrics client-side.
+     */
+    fun observeSignals(): Flow<List<Signal>> = callbackFlow {
+        val registration = db.collection("signals")
+            .orderBy("created_at", Query.Direction.DESCENDING)
+            .limit(200)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                val signals = snapshot?.documents?.mapNotNull { doc ->
+                    doc.data?.let { mapToSignal(it) }
+                } ?: emptyList()
+                trySend(signals)
             }
         awaitClose { registration.remove() }
     }
@@ -484,6 +510,35 @@ class CiroRepository(
                     urgency = (st["urgency"] as? Number)?.toDouble() ?: 0.0,
                 )
             },
+        )
+    }
+
+    // ── Signal Mapper ────────────────────────────────────────────────────
+
+    @Suppress("UNCHECKED_CAST")
+    private fun mapToSignal(data: Map<String, Any>): Signal {
+        val locationMap = data["location"] as? Map<String, Any> ?: emptyMap()
+        return Signal(
+            signal_id = data["signal_id"] as? String ?: "",
+            source_type = data["source_type"] as? String ?: "",
+            source_name = data["source_name"] as? String ?: "",
+            created_at = data["created_at"] as? String ?: "",
+            timestamp = data["timestamp"] as? String ?: "",
+            credibility_score = (data["credibility_score"] as? Number)?.toDouble() ?: 0.5,
+            urgency_language_score = (data["urgency_language_score"] as? Number)?.toDouble() ?: 0.5,
+            mention_velocity = (data["mention_velocity"] as? Number)?.toInt() ?: 0,
+            contradiction_flag = data["contradiction_flag"] as? Boolean ?: false,
+            degraded_mode = data["degraded_mode"] as? Boolean ?: false,
+            processed = data["processed"] as? Boolean ?: false,
+            related_incident_id = data["related_incident_id"] as? String,
+            location = SignalLocation(
+                area_name = locationMap["area_name"] as? String ?: "",
+                lat = (locationMap["lat"] as? Number)?.toDouble() ?: 0.0,
+                lng = (locationMap["lng"] as? Number)?.toDouble() ?: 0.0,
+                geolocation_confidence = (locationMap["geolocation_confidence"] as? Number)?.toDouble() ?: 0.5,
+                radius_m = (locationMap["radius_m"] as? Number)?.toDouble(),
+            ),
+            raw_payload = (data["raw_payload"] as? Map<String, Any>) ?: emptyMap(),
         )
     }
 }
