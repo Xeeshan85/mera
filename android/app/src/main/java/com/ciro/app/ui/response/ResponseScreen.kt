@@ -159,11 +159,15 @@ fun ResponseScreen(
 
                     Spacer(Modifier.height(12.dp))
 
-                    // Per-type breakdown
-                    val resourcesToGroup = if (allResources.isNotEmpty()) allResources else resources
-                    val types = resourcesToGroup.groupBy { it.type }
+                    // Per-type breakdown — fallback to resources collection when agencies empty
+                    val typeData: List<Pair<String, String>> = if (allResources.isNotEmpty()) {
+                        allResources.map { it.type to it.state }
+                    } else {
+                        resources.map { it.type to it.state }
+                    }
+                    val types = typeData.groupBy { it.first }
                     types.forEach { (type, items) ->
-                        val typeAvail = items.count { it.state == "AVAILABLE" }
+                        val typeAvail = items.count { it.second == "AVAILABLE" }
                         ResourceTypeBar(
                             label = type.replace("_", " ").uppercase(),
                             available = typeAvail,
